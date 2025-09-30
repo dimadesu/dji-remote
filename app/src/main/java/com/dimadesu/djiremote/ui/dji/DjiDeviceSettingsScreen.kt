@@ -6,6 +6,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dimadesu.djiremote.dji.DjiBleScanner
@@ -19,6 +20,7 @@ fun DjiDeviceSettingsScreen(device: SettingsDjiDevice, onBack: () -> Unit = {}) 
     var password by remember { mutableStateOf(device.wifiPassword) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
     var showScanner by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(device.name)
@@ -58,15 +60,12 @@ fun DjiDeviceSettingsScreen(device: SettingsDjiDevice, onBack: () -> Unit = {}) 
             }
             if (!device.isStarted) {
                 Button(onClick = {
-                    device.isStarted = true
-                    device.state = com.dimadesu.djiremote.dji.SettingsDjiDeviceState.CONNECTING
-                    DjiRepository.updateDevice(device)
+                    // delegate to model to start streaming
+                    com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, device)
                 }) { Text("Start stream") }
             } else {
                 Button(onClick = {
-                    device.isStarted = false
-                    device.state = com.dimadesu.djiremote.dji.SettingsDjiDeviceState.IDLE
-                    DjiRepository.updateDevice(device)
+                    com.dimadesu.djiremote.dji.DjiModel.stopStreaming(device)
                 }) { Text("Stop stream") }
             }
         }
