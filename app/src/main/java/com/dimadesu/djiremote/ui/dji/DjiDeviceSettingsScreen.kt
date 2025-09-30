@@ -25,9 +25,9 @@ fun DjiDeviceSettingsScreen(device: SettingsDjiDevice, onBack: () -> Unit = {}) 
         Spacer(modifier = Modifier.height(8.dp))
         Button(onClick = { showScanner = true }) { Text("Select Bluetooth device") }
         if (showScanner) {
-            DjiBleScannerScreen(onSelect = { id, name ->
+            DjiBleScannerScreen(onSelect = { address, name ->
                 // update device bluetooth fields
-                device.bluetoothPeripheralId = java.util.UUID.fromString(id)
+                device.bluetoothPeripheralAddress = address
                 device.bluetoothPeripheralName = name
                 DjiRepository.updateDevice(device)
                 DjiBleScanner.stopScanning()

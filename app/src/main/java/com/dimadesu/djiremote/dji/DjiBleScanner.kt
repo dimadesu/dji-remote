@@ -15,8 +15,8 @@ import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 object DjiBleScanner {
-    private val _discovered = MutableStateFlow<List<Pair<String, String>>>(emptyList())
-    val discovered: StateFlow<List<Pair<String, String>>> = _discovered
+    private val _discovered = MutableStateFlow<List<Triple<String, String, String>>>(emptyList())
+    val discovered: StateFlow<List<Triple<String, String, String>>> = _discovered
 
     private var scanning = false
     private var scanner: BluetoothLeScanner? = null
@@ -39,7 +39,7 @@ object DjiBleScanner {
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
         if (!adapter.isEnabled) return
         scanner = adapter.bluetoothLeScanner ?: return
-        val found = mutableListOf<Pair<String, String>>()
+    val found = mutableListOf<Triple<String, String, String>>()
         callback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult?) {
                 result?.device?.let { device ->
@@ -48,7 +48,7 @@ object DjiBleScanner {
                     val id = UUID.nameUUIDFromBytes(address.toByteArray(StandardCharsets.UTF_8)).toString()
                     synchronized(found) {
                         if (found.none { it.first == id }) {
-                            found.add(id to name)
+                            found.add(Triple(id, address, name))
                             _discovered.value = found.toList()
                         }
                     }

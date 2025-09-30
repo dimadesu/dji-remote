@@ -59,13 +59,13 @@ fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) 
 
         Spacer(modifier = Modifier.height(8.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(discoveredState) { (id, name) ->
+            items(discoveredState) { (id, address, name) ->
                 Row(modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(id, name) }
+                    .clickable { onSelect(address, name) }
                     .padding(8.dp)) {
                     Text(name, modifier = Modifier.weight(1f))
-                    Text(id)
+                    Text(address)
                 }
             }
         }

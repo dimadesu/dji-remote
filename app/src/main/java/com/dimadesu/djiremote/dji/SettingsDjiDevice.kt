@@ -17,6 +17,7 @@ data class SettingsDjiDevice(
     var name: String = "DJI Device",
     var bluetoothPeripheralName: String? = null,
     var bluetoothPeripheralId: UUID? = null,
+    var bluetoothPeripheralAddress: String? = null,
     var model: SettingsDjiDeviceModel = SettingsDjiDeviceModel.UNKNOWN,
     var wifiSsid: String = "",
     var wifiPassword: String = "",

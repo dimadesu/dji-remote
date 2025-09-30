@@ -28,10 +28,11 @@ object DjiRepository {
 
 // Fake scanner that returns discovered (simulated) devices
 object DjiScanner {
+    // Return triples of (id, address, name). In real scanning the id is derived from address.
     private val simulated = listOf(
-        Pair(UUID.randomUUID(), "DJI-Cam-001"),
-        Pair(UUID.randomUUID(), "DJI-Cam-002")
+        Triple(UUID.randomUUID().toString(), "AA:BB:CC:DD:EE:01", "DJI-Cam-001"),
+        Triple(UUID.randomUUID().toString(), "AA:BB:CC:DD:EE:02", "DJI-Cam-002")
     )
 
-    fun getDiscoveredDevices(): List<Pair<UUID, String>> = simulated
+    fun getDiscoveredDevices(): List<Triple<String, String, String>> = simulated
 }
