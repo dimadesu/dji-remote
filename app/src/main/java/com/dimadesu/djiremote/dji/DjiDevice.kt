@@ -58,6 +58,12 @@ class DjiDevice(private val context: Context) {
     private var bluetoothGatt: BluetoothGatt? = null
     private var fff5Characteristic: BluetoothGattCharacteristic? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    // MTU and write queue
+    private var negotiatedMtu: Int = 23
+    private val writePayloadOverhead = 3 // ATT header
+    private val writeQueue: ArrayDeque<ByteArray> = ArrayDeque()
+    private var isWriting: Boolean = false
+    private val writeIntervalMs: Long = 30L // pacing between writes for NO_RESPONSE
 
     // state machine fields
     private var wifiSsid: String? = null
@@ -182,9 +188,21 @@ class DjiDevice(private val context: Context) {
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                // request a large MTU (max 517) then discover services; MTU change is async
+                try {
+                    gatt.requestMtu(517)
+                } catch (e: Exception) {
+                    // ignore if not supported
+                }
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 reset()
+            }
+        }
+
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                negotiatedMtu = mtu
             }
         }
 
@@ -234,21 +252,52 @@ class DjiDevice(private val context: Context) {
         }
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-            // write-without-response may not trigger this; nothing to do here for now
+            // We still pace writes via a handler; if platform provides acks for writes
+            // we can optionally react here. For now we rely on pacing.
         }
     }
 
     fun writeMessage(message: DjiMessage) {
         val bytes = message.encode()
-        writeValue(bytes)
+        enqueueWrite(bytes)
     }
 
-    private fun writeValue(value: ByteArray) {
-        val char = fff5Characteristic ?: return
-        // TODO: handle MTU and chunking for large writes
-        char.value = value
+    private fun enqueueWrite(value: ByteArray) {
+        // Split into chunks of (negotiatedMtu - overhead)
+        val payloadSize = maxOf(1, negotiatedMtu - writePayloadOverhead)
+        var offset = 0
+        while (offset < value.size) {
+            val end = minOf(offset + payloadSize, value.size)
+            val chunk = value.copyOfRange(offset, end)
+            writeQueue.addLast(chunk)
+            offset = end
+        }
+        startWriteLoopIfNeeded()
+    }
+
+    private fun startWriteLoopIfNeeded() {
+        if (isWriting) return
+        isWriting = true
+        mainHandler.post { writeNextChunk() }
+    }
+
+    private fun writeNextChunk() {
+        val chunk = writeQueue.removeFirstOrNull()
+        if (chunk == null) {
+            isWriting = false
+            return
+        }
+        val char = fff5Characteristic ?: run {
+            // clear queue if characteristic missing
+            writeQueue.clear()
+            isWriting = false
+            return
+        }
+        char.value = chunk
         char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         bluetoothGatt?.writeCharacteristic(char)
+        // schedule next chunk after a short delay to avoid saturating the controller
+        mainHandler.postDelayed({ writeNextChunk() }, writeIntervalMs)
     }
 
     // MARK: - State machine handlers (ported from Swift)
