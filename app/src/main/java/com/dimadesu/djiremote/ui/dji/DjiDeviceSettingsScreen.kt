@@ -8,6 +8,8 @@ import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.dimadesu.djiremote.dji.DjiBleScanner
+import com.dimadesu.djiremote.ui.dji.DjiBleScannerScreen
 import com.dimadesu.djiremote.dji.DjiRepository
 import com.dimadesu.djiremote.dji.SettingsDjiDevice
 
@@ -16,9 +18,22 @@ fun DjiDeviceSettingsScreen(device: SettingsDjiDevice, onBack: () -> Unit = {}) 
     var ssid by remember { mutableStateOf(device.wifiSsid) }
     var password by remember { mutableStateOf(device.wifiPassword) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
+    var showScanner by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(device.name)
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = { showScanner = true }) { Text("Select Bluetooth device") }
+        if (showScanner) {
+            DjiBleScannerScreen(onSelect = { id, name ->
+                // update device bluetooth fields
+                device.bluetoothPeripheralId = java.util.UUID.fromString(id)
+                device.bluetoothPeripheralName = name
+                DjiRepository.updateDevice(device)
+                DjiBleScanner.stopScanning()
+                showScanner = false
+            }, onBack = { showScanner = false })
+        }
         Spacer(modifier = Modifier.height(8.dp))
         TextField(value = ssid, onValueChange = { ssid = it }, label = { Text("SSID") })
         Spacer(modifier = Modifier.height(8.dp))
