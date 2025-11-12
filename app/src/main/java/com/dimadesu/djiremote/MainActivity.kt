@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.dimadesu.djiremote.dji.SettingsDjiDevice
 import com.dimadesu.djiremote.ui.dji.DjiDeviceSettingsScreen
 import com.dimadesu.djiremote.ui.dji.DjiDevicesSettingsScreen
+import com.dimadesu.djiremote.ui.dji.DjiBleScannerScreen
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.dimadesu.djiremote.ui.theme.DJIRemoteTheme
@@ -44,8 +45,23 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Greeting(name = "Android")
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    Button(onClick = { screen = "devices" }) { Text("DJI Devices") }
+                                    Button(onClick = { screen = "scanner" }) { 
+                                        Text("Test BLE Scanner") 
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { screen = "devices" }) { 
+                                        Text("DJI Devices") 
+                                    }
                                 }
+                            }
+                            "scanner" -> {
+                                DjiBleScannerScreen(
+                                    onSelect = { address, name ->
+                                        // For now just go back
+                                        screen = "home"
+                                    },
+                                    onBack = { screen = "home" }
+                                )
                             }
                             "devices" -> {
                                 DjiDevicesSettingsScreen(onOpenDevice = {

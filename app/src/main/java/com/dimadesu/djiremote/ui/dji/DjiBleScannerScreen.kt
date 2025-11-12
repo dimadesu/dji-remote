@@ -16,6 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dimadesu.djiremote.dji.DjiBleScanner
 import android.os.Build
+import android.util.Log
+
+private const val TAG = "DjiBleScannerScreen"
 
 @Composable
 fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) {
@@ -25,12 +28,15 @@ fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) 
     val isBtEnabled = DjiBleScanner.isBluetoothEnabled(context)
     var showAllDevices by remember { mutableStateOf(false) }
 
+    Log.d(TAG, "Screen rendered: hasPermissions=${DjiBleScanner.hasPermissions(context)}, btEnabled=$isBtEnabled, devices=${discoveredState.size}")
+    
     val hasPermissions = DjiBleScanner.hasPermissions(context)
 
     val permissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { perms ->
             val granted = perms.values.all { it }
+            Log.d(TAG, "Permission result: $perms, allGranted=$granted")
             if (granted) {
                 DjiBleScanner.startScanning(context)
             }
@@ -38,6 +44,7 @@ fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) 
     )
 
     LaunchedEffect(hasPermissions) {
+        Log.d(TAG, "LaunchedEffect: hasPermissions=$hasPermissions")
         if (hasPermissions) {
             DjiBleScanner.startScanning(context)
         }
@@ -54,7 +61,8 @@ fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     permissionsLauncher.launch(arrayOf(
                         Manifest.permission.BLUETOOTH_SCAN,
-                        Manifest.permission.BLUETOOTH_CONNECT
+                        Manifest.permission.BLUETOOTH_CONNECT,
+                        Manifest.permission.ACCESS_FINE_LOCATION
                     ))
                 } else {
                     permissionsLauncher.launch(arrayOf(
