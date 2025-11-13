@@ -195,21 +195,10 @@ class DjiDevice(private val context: Context) {
         val device = adapter.getRemoteDevice(address)
         Log.d(TAG, "Got remote device, bond state: ${device.bondState}")
         
-        // Try creating bond if not bonded
-        if (device.bondState == android.bluetooth.BluetoothDevice.BOND_NONE) {
-            Log.d(TAG, "Device not bonded, attempting to create bond...")
-            device.createBond()
-            // Wait a bit for bonding, then connect
-            mainHandler.postDelayed({
-                Log.d(TAG, "Bond state after delay: ${device.bondState}, calling connectGatt...")
-                bluetoothGatt = device.connectGatt(context, false, gattCallback)
-                setState(DjiDeviceState.CONNECTING)
-            }, 2000)
-        } else {
-            Log.d(TAG, "Device already bonded or bonding, calling connectGatt...")
-            bluetoothGatt = device.connectGatt(context, false, gattCallback)
-            setState(DjiDeviceState.CONNECTING)
-        }
+        // Connect with TRANSPORT_LE explicitly for BLE devices
+        Log.d(TAG, "Calling connectGatt with TRANSPORT_LE...")
+        bluetoothGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+        setState(DjiDeviceState.CONNECTING)
     }
     
     private fun writeNextDescriptor() {
@@ -278,44 +267,27 @@ class DjiDevice(private val context: Context) {
                         Log.w(TAG, "FFF4 notification enabled but not in CONNECTING state, ignoring")
                         return
                     }
-                    Log.d(TAG, "FFF4 notifications enabled in CONNECTING state, will send pairing message after 500ms delay...")
+                    Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
+                    Log.d(TAG, "  Waiting for camera to initiate communication...")
+                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
                     
-                    // Try reading from FFF4 first - maybe this triggers something?
-                    val fff4Char = bluetoothGatt?.services?.flatMap { it.characteristics }
-                        ?.find { it.uuid == FFF4_UUID }
-                    if (fff4Char != null) {
-                        Log.d(TAG, "  Attempting to read from FFF4 characteristic...")
-                        bluetoothGatt?.readCharacteristic(fff4Char)
-                    }
-                    
-                    // Give camera more time to fully enable notifications (500ms instead of 100ms)
+                    // Give the camera time to send its initial message
                     mainHandler.postDelayed({
-                        if (state != DjiDeviceState.CONNECTING) {
-                            Log.w(TAG, "State changed before pairing message sent, aborting")
+                        if (state != DjiDeviceState.CHECKING_IF_PAIRED) {
+                            Log.d(TAG, "State changed, not sending pairing")
                             return@postDelayed
                         }
                         
-                        Log.d(TAG, "Sending pairing message now...")
+                        // If we haven't received anything after 1 second, send the pairing message
+                        Log.d(TAG, "No response from camera, sending pairing message...")
                         val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
                         val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
                         val bytes = msg.encode()
                         Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
                         
-                        // Write directly without queuing (single message, fits in MTU)
-                        // Try WRITE_TYPE_DEFAULT (with response) for pairing - maybe Android needs this?
-                        val char = fff5Characteristic
-                        if (char != null && bluetoothGatt != null) {
-                            char.value = bytes
-                            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                            Log.d(TAG, "  Using WRITE_TYPE_DEFAULT for pairing message")
-                            bluetoothGatt!!.writeCharacteristic(char)
-                            Log.d(TAG, "  Pairing message written directly to FFF5")
-                        } else {
-                            Log.e(TAG, "  Cannot write pairing: fff5Characteristic or gatt is null!")
-                        }
-                        
-                        setState(DjiDeviceState.CHECKING_IF_PAIRED)
-                    }, 500)
+                        // Use the write queue system instead of direct write
+                        enqueueWrite(bytes)
+                    }, 1000)
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
@@ -387,10 +359,18 @@ class DjiDevice(private val context: Context) {
             if (value != null) {
                 Log.d(TAG, "  Raw bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
             }
-            if (value == null) return
+            if (value == null || value.isEmpty()) return
+            
+            // Check if this is just a notification enable confirmation (some devices send empty notifications)
+            if (value.size < 10) {
+                Log.d(TAG, "  Short message, might be notification confirmation")
+            }
+            
             try {
                 val message = DjiMessage.fromBytes(value)
-                Log.d(TAG, "  Decoded message: target=${message.target}, type=${message.type}, id=${message.id}, payload=${message.payload.size} bytes")
+                Log.d(TAG, "  Decoded message: target=0x${message.target.toString(16)}, type=0x${message.type.toString(16)}, id=0x${message.id.toString(16)}, payload=${message.payload.size} bytes")
+                Log.d(TAG, "  Payload: ${message.payload.joinToString(" ") { "%02X".format(it) }}")
+                
                 when (state) {
                     DjiDeviceState.CHECKING_IF_PAIRED -> {
                         Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
@@ -488,10 +468,17 @@ class DjiDevice(private val context: Context) {
     }
 
     private fun processCheckingIfPaired(response: DjiMessage) {
-        if (response.id != PAIR_TRANSACTION_ID) return
+        Log.d(TAG, "processCheckingIfPaired: id=0x${response.id.toString(16)}, expecting=0x${PAIR_TRANSACTION_ID.toString(16)}")
+        if (response.id != PAIR_TRANSACTION_ID) {
+            Log.d(TAG, "  Not a pairing response, ignoring")
+            return
+        }
+        Log.d(TAG, "  Pairing response payload: ${response.payload.joinToString(" ") { "%02X".format(it) }}")
         if (response.payload.contentEquals(byteArrayOf(0, 1))) {
+            Log.d(TAG, "  Device reports paired successfully")
             processPairing()
         } else {
+            Log.d(TAG, "  Device not paired, entering pairing state")
             setState(DjiDeviceState.PAIRING)
         }
     }
