@@ -4,7 +4,10 @@ import android.bluetooth.*
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.util.UUID
+
+private const val TAG = "DjiDevice"
 
 // UUIDs from the iOS implementation (16-bit) expanded to 128-bit base
 val FFF4_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
@@ -64,6 +67,10 @@ class DjiDevice(private val context: Context) {
     private val writeQueue: ArrayDeque<ByteArray> = ArrayDeque()
     private var isWriting: Boolean = false
     private val writeIntervalMs: Long = 30L // pacing between writes for NO_RESPONSE
+    
+    // Descriptor write queue
+    private val descriptorWriteQueue: ArrayDeque<BluetoothGattDescriptor> = ArrayDeque()
+    private var isWritingDescriptor: Boolean = false
 
     // state machine fields
     private var wifiSsid: String? = null
@@ -95,6 +102,11 @@ class DjiDevice(private val context: Context) {
         imageStabilization: SettingsDjiDeviceImageStabilization,
         model: SettingsDjiDeviceModel
     ) {
+        Log.d(TAG, "startLiveStream: address=$address, model=$model")
+        Log.d(TAG, "  WiFi: $wifiSsid")
+        Log.d(TAG, "  RTMP: $rtmpUrl")
+        Log.d(TAG, "  Resolution: $resolution, FPS: $fps, Bitrate: ${bitrateKbps}kbps")
+        
         // configure
         this.wifiSsid = wifiSsid
         this.wifiPassword = wifiPassword
@@ -109,6 +121,7 @@ class DjiDevice(private val context: Context) {
         reset()
         startStartStreamingTimer()
         setState(DjiDeviceState.DISCOVERING)
+        Log.d(TAG, "Connecting to device at $address...")
         connectToAddress(address)
     }
 
@@ -165,6 +178,7 @@ class DjiDevice(private val context: Context) {
 
     private fun setState(newState: DjiDeviceState) {
         if (newState == state) return
+        Log.d(TAG, "State transition: $state -> $newState")
         state = newState
         delegate?.djiDeviceStreamingState(this, state)
     }
@@ -172,10 +186,35 @@ class DjiDevice(private val context: Context) {
     fun getState(): DjiDeviceState = state
 
     fun connectToAddress(address: String) {
-        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return
+        Log.d(TAG, "connectToAddress: $address")
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+            Log.e(TAG, "BluetoothAdapter is null!")
+            return
+        }
         val device = adapter.getRemoteDevice(address)
+        Log.d(TAG, "Got remote device, calling connectGatt...")
         bluetoothGatt = device.connectGatt(context, false, gattCallback)
         setState(DjiDeviceState.CONNECTING)
+    }
+    
+    private fun writeNextDescriptor() {
+        if (isWritingDescriptor) return
+        val descriptor = descriptorWriteQueue.removeFirstOrNull()
+        if (descriptor == null) {
+            Log.d(TAG, "writeNextDescriptor: queue empty")
+            return
+        }
+        
+        val gatt = bluetoothGatt
+        if (gatt == null) {
+            Log.e(TAG, "writeNextDescriptor: gatt is null!")
+            return
+        }
+        
+        Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
+        isWritingDescriptor = true
+        gatt.writeDescriptor(descriptor)
     }
 
     fun disconnect() {
@@ -187,7 +226,9 @@ class DjiDevice(private val context: Context) {
 
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            Log.d(TAG, "onConnectionStateChange: status=$status, newState=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.d(TAG, "Connected! Requesting MTU and discovering services...")
                 // request a large MTU (max 517) then discover services; MTU change is async
                 try {
                     gatt.requestMtu(517)
@@ -196,36 +237,78 @@ class DjiDevice(private val context: Context) {
                 }
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.w(TAG, "Disconnected from device (status=$status)")
                 reset()
             }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            Log.d(TAG, "onMtuChanged: mtu=$mtu, status=$status")
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 negotiatedMtu = mtu
             }
         }
+        
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            Log.d(TAG, "onDescriptorWrite: descriptor=${descriptor.uuid}, status=$status")
+            isWritingDescriptor = false
+            
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                // Continue with next descriptor or start pairing check if done
+                if (descriptorWriteQueue.isEmpty()) {
+                    Log.d(TAG, "All descriptors written, starting pairing check...")
+                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    // Send pair check: in iOS this is implemented by expecting a response for pairTransactionId
+                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                    writeMessage(msg)
+                } else {
+                    writeNextDescriptor()
+                }
+            } else {
+                Log.e(TAG, "Descriptor write failed with status $status")
+                // Try next one anyway
+                writeNextDescriptor()
+            }
+        }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
+            Log.d(TAG, "onServicesDiscovered: status=$status")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.e(TAG, "Service discovery failed!")
+                return
+            }
             val serviceList = gatt.services
+            Log.d(TAG, "Found ${serviceList.size} services")
             for (service in serviceList) {
+                Log.d(TAG, "  Service: ${service.uuid}")
                 val char = service.getCharacteristic(FFF5_UUID)
                 if (char != null) {
+                    Log.d(TAG, "Found FFF5 characteristic!")
                     fff5Characteristic = char
                     // enable notifications on all characteristics similar to iOS
                     for (c in service.characteristics) {
+                        Log.d(TAG, "    Enabling notifications for: ${c.uuid}")
                         gatt.setCharacteristicNotification(c, true)
+                        // Queue descriptor write to enable notifications
+                        val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                        if (descriptor != null) {
+                            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            descriptorWriteQueue.add(descriptor)
+                        }
                     }
                     break
                 }
             }
-            // After services discovered, check pairing status
-            setState(DjiDeviceState.CHECKING_IF_PAIRED)
-            // Send pair check: in iOS this is implemented by expecting a response for pairTransactionId
-            val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-            val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-            writeMessage(msg)
+            
+            if (fff5Characteristic == null) {
+                Log.e(TAG, "FFF5 characteristic not found!")
+                return
+            }
+            
+            // Start writing descriptors, pairing check will happen after all complete
+            Log.d(TAG, "Starting descriptor writes (${descriptorWriteQueue.size} queued)...")
+            writeNextDescriptor()
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {

@@ -1,10 +1,13 @@
 package com.dimadesu.djiremote.dji
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
+
+private const val TAG = "DjiModel"
 
 // Simple model that manages DjiDevice instances and acts as the delegate
 object DjiModel : DjiDeviceDelegate {
@@ -16,7 +19,32 @@ object DjiModel : DjiDeviceDelegate {
     private val contextsByAddress = mutableMapOf<String, Context>()
 
     fun startStreaming(context: Context, settings: SettingsDjiDevice) {
-        val address = settings.bluetoothPeripheralAddress ?: return
+        Log.d(TAG, "startStreaming called for device: ${settings.name}")
+        Log.d(TAG, "  BT Address: ${settings.bluetoothPeripheralAddress}")
+        Log.d(TAG, "  WiFi SSID: ${settings.wifiSsid}")
+        Log.d(TAG, "  WiFi Password: ${settings.wifiPassword}")
+        Log.d(TAG, "  RTMP URL: ${settings.customRtmpUrl}")
+        Log.d(TAG, "  Model: ${settings.model}")
+        
+        val address = settings.bluetoothPeripheralAddress
+        if (address == null) {
+            Log.e(TAG, "Cannot start streaming: Bluetooth device address is null!")
+            return
+        }
+        if (settings.wifiSsid.isEmpty()) {
+            Log.e(TAG, "Cannot start streaming: WiFi SSID is empty!")
+            return
+        }
+        if (settings.wifiPassword.isEmpty()) {
+            Log.e(TAG, "Cannot start streaming: WiFi password is empty!")
+            return
+        }
+        if (settings.customRtmpUrl.isEmpty() && settings.serverRtmpUrl.isEmpty()) {
+            Log.e(TAG, "Cannot start streaming: RTMP URL is empty!")
+            return
+        }
+        
+        Log.d(TAG, "All prerequisites met, starting stream...")
         contextsByAddress[address] = context
         val device = devices.getOrPut(address) { DjiDevice(context).also { it.delegate = this } }
         // map Settings to DjiDevice start params
@@ -24,6 +52,7 @@ object DjiModel : DjiDeviceDelegate {
         val res = when (settings.resolution) {
             "1080p" -> SettingsDjiDeviceResolution.r1080p
             "720p" -> SettingsDjiDeviceResolution.r720p
+            "480p" -> SettingsDjiDeviceResolution.r480p
             else -> SettingsDjiDeviceResolution.r1080p
         }
         val imageStab = settings.imageStabilization
@@ -38,6 +67,7 @@ object DjiModel : DjiDeviceDelegate {
             imageStabilization = imageStab,
             model = model
         )
+        Log.d(TAG, "DjiDevice.startLiveStream() called")
         // update repository state
         scope.launch(Dispatchers.Main) {
             settings.isStarted = true
