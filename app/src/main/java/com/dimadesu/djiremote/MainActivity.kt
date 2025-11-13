@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                             "scanner" -> {
                                 DjiBleScannerScreen(
                                     onSelect = { address, name ->
-                                        // For now just go back
+                                        // For testing, just go back
                                         screen = "home"
                                     },
                                     onBack = { screen = "home" }
@@ -71,8 +71,29 @@ class MainActivity : ComponentActivity() {
                             }
                             "device" -> {
                                 selectedDevice?.let { d ->
-                                    DjiDeviceSettingsScreen(device = d, onBack = { screen = "devices" })
+                                    DjiDeviceSettingsScreen(
+                                        device = d,
+                                        onBack = { screen = "devices" },
+                                        onOpenScanner = {
+                                            // Store current device and go to scanner
+                                            screen = "device-scanner"
+                                        }
+                                    )
                                 }
+                            }
+                            "device-scanner" -> {
+                                DjiBleScannerScreen(
+                                    onSelect = { address, name ->
+                                        // Update selected device and go back
+                                        selectedDevice?.let { d ->
+                                            d.bluetoothPeripheralAddress = address
+                                            d.bluetoothPeripheralName = name
+                                            com.dimadesu.djiremote.dji.DjiRepository.updateDevice(d)
+                                        }
+                                        screen = "device"
+                                    },
+                                    onBack = { screen = "device" }
+                                )
                             }
                         }
                     }

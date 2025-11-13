@@ -17,25 +17,80 @@ fun DjiDevicesSettingsScreen(onOpenDevice: (SettingsDjiDevice) -> Unit) {
     val devices by DjiRepository.devices.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("DJI Devices", modifier = Modifier.padding(bottom = 8.dp))
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(devices) { device ->
-                Row(modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenDevice(device) }
-                    .padding(vertical = 8.dp)
-                ) {
-                    Text(device.name, modifier = Modifier.weight(1f))
-                    Text(device.state.name)
-                }
-            }
-        }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            Text("DJI Devices", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
             Button(onClick = {
-                val d = SettingsDjiDevice(name = "${'$'}{SettingsDjiDevice::class.simpleName} ${devices.size + 1}")
+                val d = SettingsDjiDevice(name = "DJI Device ${devices.size + 1}")
                 DjiRepository.addDevice(d)
             }) {
-                Text("Add device")
+                Text("Create")
+            }
+        }
+        
+        if (devices.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "No devices yet",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Tap Create to add a device",
+                    style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(devices) { device ->
+                    androidx.compose.material3.Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clickable { onOpenDevice(device) }
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = device.name,
+                                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = device.state.name,
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                    color = when (device.state) {
+                                        com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STREAMING -> 
+                                            androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                        com.dimadesu.djiremote.dji.SettingsDjiDeviceState.WIFI_SETUP_FAILED -> 
+                                            androidx.compose.material3.MaterialTheme.colorScheme.error
+                                        else -> 
+                                            androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                            if (device.bluetoothPeripheralName != null) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = device.bluetoothPeripheralName!!,
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
