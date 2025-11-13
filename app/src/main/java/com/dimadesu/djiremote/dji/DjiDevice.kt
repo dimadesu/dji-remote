@@ -323,17 +323,15 @@ class DjiDevice(private val context: Context) {
         Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
         isWritingDescriptor = true
         
-        // Enable BOTH notifications AND indications (0x03 00)
-        val descriptorValue = byteArrayOf(0x03, 0x00)
-        
         // Use new API for Android 13+ (API 33+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val result = gatt.writeDescriptor(descriptor, descriptorValue)
-            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=0x0300 (NOTIFY+INDICATE)")
+            // Just enable notifications (not indications) - DJI doesn't support both
+            val result = gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=0x0100 (NOTIFY only)")
         } else {
-            descriptor.value = descriptorValue
+            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             val result = gatt.writeDescriptor(descriptor)
-            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=0x0300 (NOTIFY+INDICATE)")
+            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=0x0100 (NOTIFY only)")
         }
     }
 
