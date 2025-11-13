@@ -21,12 +21,14 @@ fun DjiDeviceSettingsScreen(
     var name by remember { mutableStateOf(device.name) }
     var ssid by remember { mutableStateOf(device.wifiSsid) }
     var password by remember { mutableStateOf(device.wifiPassword) }
-    var rtmpUrl by remember { mutableStateOf(device.customRtmpUrl) }
+    var rtmpUrl by remember { mutableStateOf(device.rtmpUrl) }
+    var selectedModel by remember { mutableStateOf(device.model) }
     var resolution by remember { mutableStateOf(device.resolution) }
     var bitrate by remember { mutableStateOf(device.bitrate) }
     var imageStabilization by remember { mutableStateOf(device.imageStabilization) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
     var expandedResolution by remember { mutableStateOf(false) }
+    var expandedModel by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
     var expandedImageStab by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -146,6 +148,37 @@ fun DjiDeviceSettingsScreen(
             placeholder = { Text("rtmp://server/live/stream") },
             modifier = Modifier.fillMaxWidth()
         )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        // Model dropdown
+        ExposedDropdownMenuBox(
+            expanded = expandedModel,
+            onExpandedChange = { expandedModel = !expandedModel }
+        ) {
+            TextField(
+                value = selectedModel.name.replace("_", " "),
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Camera Model") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModel) },
+                modifier = Modifier.fillMaxWidth().menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = expandedModel,
+                onDismissRequest = { expandedModel = false }
+            ) {
+                com.dimadesu.djiremote.dji.SettingsDjiDeviceModel.values().forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model.name.replace("_", " ")) },
+                        onClick = {
+                            selectedModel = model
+                            expandedModel = false
+                        }
+                    )
+                }
+            }
+        }
         
         Spacer(modifier = Modifier.height(16.dp))
         Divider()
@@ -303,7 +336,8 @@ fun DjiDeviceSettingsScreen(
                     device.name = name
                     device.wifiSsid = ssid
                     device.wifiPassword = password
-                    device.customRtmpUrl = rtmpUrl
+                    device.rtmpUrl = rtmpUrl
+                    device.model = selectedModel
                     device.resolution = resolution
                     device.bitrate = bitrate
                     device.imageStabilization = imageStabilization

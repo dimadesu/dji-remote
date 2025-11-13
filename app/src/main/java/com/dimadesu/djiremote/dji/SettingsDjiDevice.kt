@@ -10,8 +10,6 @@ enum class SettingsDjiDeviceState {
     IDLE, DISCOVERING, CONNECTING, PAIRING, PREPARING_STREAM, STARTING_STREAM, STREAMING, WIFI_SETUP_FAILED, UNKNOWN
 }
 
-enum class SettingsDjiDeviceUrlType { SERVER, CUSTOM }
-
 enum class SettingsDjiDeviceImageStabilization {
     OFF, ROCK_STEADY, ROCK_STEADY_PLUS, HORIZON_BALANCING, HORIZON_STEADY
 }
@@ -25,10 +23,7 @@ data class SettingsDjiDevice(
     var model: SettingsDjiDeviceModel = SettingsDjiDeviceModel.UNKNOWN,
     var wifiSsid: String = "",
     var wifiPassword: String = "",
-    var rtmpUrlType: SettingsDjiDeviceUrlType = SettingsDjiDeviceUrlType.SERVER,
-    var serverRtmpStreamId: UUID? = null,
-    var serverRtmpUrl: String = "",
-    var customRtmpUrl: String = "",
+    var rtmpUrl: String = "",
     var resolution: String = "1080p",
     var fps: Int = 30,
     var bitrate: Int = 6_000_000,

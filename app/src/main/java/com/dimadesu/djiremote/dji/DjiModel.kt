@@ -23,7 +23,7 @@ object DjiModel : DjiDeviceDelegate {
         Log.d(TAG, "  BT Address: ${settings.bluetoothPeripheralAddress}")
         Log.d(TAG, "  WiFi SSID: ${settings.wifiSsid}")
         Log.d(TAG, "  WiFi Password: ${settings.wifiPassword}")
-        Log.d(TAG, "  RTMP URL: ${settings.customRtmpUrl}")
+        Log.d(TAG, "  RTMP URL: ${settings.rtmpUrl}")
         Log.d(TAG, "  Model: ${settings.model}")
         
         val address = settings.bluetoothPeripheralAddress
@@ -39,7 +39,7 @@ object DjiModel : DjiDeviceDelegate {
             Log.e(TAG, "Cannot start streaming: WiFi password is empty!")
             return
         }
-        if (settings.customRtmpUrl.isEmpty() && settings.serverRtmpUrl.isEmpty()) {
+        if (settings.rtmpUrl.isEmpty()) {
             Log.e(TAG, "Cannot start streaming: RTMP URL is empty!")
             return
         }
@@ -60,7 +60,7 @@ object DjiModel : DjiDeviceDelegate {
             address = address,
             wifiSsid = settings.wifiSsid,
             wifiPassword = settings.wifiPassword,
-            rtmpUrl = if (settings.rtmpUrlType == SettingsDjiDeviceUrlType.CUSTOM) settings.customRtmpUrl else settings.serverRtmpUrl,
+            rtmpUrl = settings.rtmpUrl,
             resolution = res,
             fps = settings.fps,
             bitrateKbps = settings.bitrate / 1000,

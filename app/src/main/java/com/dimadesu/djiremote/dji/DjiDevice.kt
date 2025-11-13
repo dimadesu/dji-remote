@@ -268,17 +268,26 @@ class DjiDevice(private val context: Context) {
                         return
                     }
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
-                    Log.d(TAG, "  Sending pairing message immediately...")
+                    Log.d(TAG, "  Waiting 100ms for notifications to settle...")
                     
-                    // Send pairing message immediately (matching iOS behavior)
-                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                    val bytes = msg.encode()
-                    Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-                    enqueueWrite(bytes)
-                    
-                    // Transition to CHECKING_IF_PAIRED after sending (matching iOS)
-                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    // Small delay to ensure notifications are fully established
+                    mainHandler.postDelayed({
+                        if (state != DjiDeviceState.CONNECTING) {
+                            Log.d(TAG, "State changed during wait, aborting pairing")
+                            return@postDelayed
+                        }
+                        
+                        Log.d(TAG, "  Sending pairing message now...")
+                        // Send pairing message (matching iOS behavior)
+                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        val bytes = msg.encode()
+                        Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+                        enqueueWrite(bytes)
+                        
+                        // Transition to CHECKING_IF_PAIRED after sending
+                        setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    }, 100)
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
@@ -463,17 +472,24 @@ class DjiDevice(private val context: Context) {
             return
         }
         Log.d(TAG, "writeNextChunk: writing ${chunk.size} bytes: ${chunk.joinToString(" ") { "%02X".format(it) }}")
-        char.value = chunk
-        // Check if characteristic supports WRITE_NO_RESPONSE
-        val properties = char.properties
-        if ((properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
-            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-        } else if ((properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
-            Log.d(TAG, "  Using WRITE_TYPE_DEFAULT as WRITE_NO_RESPONSE not supported")
-            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-        }
         
-        val result = bluetoothGatt?.writeCharacteristic(char) ?: false
+        // Use new API for Android 13+ (API 33+)
+        val result = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            bluetoothGatt?.writeCharacteristic(
+                char,
+                chunk,
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            ) ?: BluetoothStatusCodes.ERROR_MISSING_BLUETOOTH_CONNECT_PERMISSION
+        } else {
+            // Old API for older Android versions
+            char.value = chunk
+            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            if (bluetoothGatt?.writeCharacteristic(char) == true) {
+                BluetoothStatusCodes.SUCCESS
+            } else {
+                BluetoothGatt.GATT_FAILURE
+            }
+        }
         Log.d(TAG, "  Write result: $result")
         
         // schedule next chunk after a short delay to avoid saturating the controller
