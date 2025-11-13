@@ -2,6 +2,7 @@ package com.dimadesu.djiremote
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,17 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     var screen by remember { mutableStateOf("home") }
                     var selectedDevice by remember { mutableStateOf<SettingsDjiDevice?>(null) }
+
+                    // Handle back button navigation
+                    BackHandler(enabled = screen != "home") {
+                        screen = when (screen) {
+                            "scanner" -> "home"
+                            "devices" -> "home"
+                            "device" -> "devices"
+                            "device-scanner" -> "device"
+                            else -> "home"
+                        }
+                    }
 
                     Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
                         when (screen) {
