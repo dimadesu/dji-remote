@@ -268,17 +268,23 @@ class DjiDevice(private val context: Context) {
                         return
                     }
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
-                    Log.d(TAG, "  Sending pairing message immediately...")
-                    
-                    // Send pairing message immediately (like iOS does)
-                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                    val bytes = msg.encode()
-                    Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-                    enqueueWrite(bytes)
-                    
-                    // Transition to CHECKING_IF_PAIRED after sending
                     setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    
+                    // Give the camera time to initialize after notifications are enabled
+                    Log.d(TAG, "  Waiting 500ms for camera to initialize...")
+                    mainHandler.postDelayed({
+                        if (state != DjiDeviceState.CHECKING_IF_PAIRED) {
+                            Log.d(TAG, "State changed, not sending pairing")
+                            return@postDelayed
+                        }
+                        
+                        Log.d(TAG, "  Sending pairing message now...")
+                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        val bytes = msg.encode()
+                        Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+                        enqueueWrite(bytes)
+                    }, 500)
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
@@ -304,11 +310,25 @@ class DjiDevice(private val context: Context) {
                 val char = service.getCharacteristic(FFF5_UUID)
                 if (char != null) {
                     Log.d(TAG, "Found FFF5 characteristic!")
+                    // Check characteristic properties
+                    val properties = char.properties
+                    Log.d(TAG, "  FFF5 properties: 0x${properties.toString(16)}")
+                    Log.d(TAG, "    WRITE_NO_RESPONSE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
+                    Log.d(TAG, "    WRITE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
+                    Log.d(TAG, "    NOTIFY: ${(properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                    
                     fff5Characteristic = char
                     
+                    // Check FFF4 properties too
+                    val fff4Char = service.getCharacteristic(FFF4_UUID)
+                    if (fff4Char != null) {
+                        val fff4Props = fff4Char.properties
+                        Log.d(TAG, "  FFF4 properties: 0x${fff4Props.toString(16)}")
+                        Log.d(TAG, "    NOTIFY: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                    }
+                    
                     // Queue descriptor writes: FFF4 must be last (triggers pairing when enabled)
-                    val fff4Descriptor = service.getCharacteristic(FFF4_UUID)
-                        ?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                    val fff4Descriptor = fff4Char?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                     
                     // Enable notifications on all characteristics
                     for (c in service.characteristics) {
@@ -443,10 +463,20 @@ class DjiDevice(private val context: Context) {
             isWriting = false
             return
         }
-        Log.d(TAG, "writeNextChunk: writing ${chunk.size} bytes")
+        Log.d(TAG, "writeNextChunk: writing ${chunk.size} bytes: ${chunk.joinToString(" ") { "%02X".format(it) }}")
         char.value = chunk
-        char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-        bluetoothGatt?.writeCharacteristic(char)
+        // Check if characteristic supports WRITE_NO_RESPONSE
+        val properties = char.properties
+        if ((properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        } else if ((properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
+            Log.d(TAG, "  Using WRITE_TYPE_DEFAULT as WRITE_NO_RESPONSE not supported")
+            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        }
+        
+        val result = bluetoothGatt?.writeCharacteristic(char) ?: false
+        Log.d(TAG, "  Write result: $result")
+        
         // schedule next chunk after a short delay to avoid saturating the controller
         mainHandler.postDelayed({ writeNextChunk() }, writeIntervalMs)
     }
