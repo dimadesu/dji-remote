@@ -280,38 +280,43 @@ class DjiDevice(private val context: Context) {
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
                     setState(DjiDeviceState.CHECKING_IF_PAIRED)
                     
-                    // EXPERIMENT: Try reading from FFF4 first to trigger initial communication
-                    Log.d(TAG, "EXPERIMENT: Reading from FFF4 first...")
+                    // NEW STRATEGY: Try sending a query/status message first
+                    Log.d(TAG, "NEW STRATEGY: Sending initial query message...")
+                    
+                    // Send a simple query message with minimal payload
                     mainHandler.postDelayed({
-                        val fff4 = fff4Characteristic
-                        if (fff4 != null) {
-                            Log.d(TAG, "Reading FFF4 characteristic...")
-                            gatt.readCharacteristic(fff4)
-                        }
+                        Log.d(TAG, "Sending query message (target=0x0702, id=0x0001, type=0x000000)...")
+                        val queryMsg = DjiMessage(0x0702, 0x0001, 0x000000, byteArrayOf())
+                        enqueueWrite(queryMsg.encode())
                     }, 100)
                     
-                    // Then send pairing message after a delay
+                    // Try a different target
                     mainHandler.postDelayed({
-                        Log.d(TAG, "Sending pairing message...")
-                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        Log.d(TAG, "Sending query with target 0x0802...")
+                        val queryMsg2 = DjiMessage(0x0802, 0x0001, 0x000000, byteArrayOf())
+                        enqueueWrite(queryMsg2.encode())
+                    }, 500)
+                    
+                    // Send the pairing message with a different payload hash
+                    mainHandler.postDelayed({
+                        Log.d(TAG, "Sending pairing with zeros hash...")
+                        // Try with all zeros hash (33 bytes of 0x00)
+                        val zeroHash = ByteArray(33) { 0x00 }
+                        val pinBytes = "mbln".toByteArray()
+                        val payload = zeroHash + byteArrayOf(pinBytes.size.toByte()) + pinBytes
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, payload)
                         val bytes = msg.encode()
-                        
-                        // Log the exact bytes we're sending
-                        Log.d(TAG, "Pairing message breakdown:")
-                        Log.d(TAG, "  Start: 0x${"%02X".format(bytes[0])}")
-                        Log.d(TAG, "  Length: ${bytes[1].toInt() and 0xFF} (0x${"%02X".format(bytes[1])})")
-                        Log.d(TAG, "  Version: 0x${"%02X".format(bytes[2])}")
-                        Log.d(TAG, "  CRC8: 0x${"%02X".format(bytes[3])}")
-                        
-                        // Verify CRC8 is correct
-                        val headerCrc = DjiCrc.computeCrc8(byteArrayOf(bytes[0], bytes[1], bytes[2]))
-                        Log.d(TAG, "  Computed CRC8: 0x${"%02X".format(headerCrc)} (should match above)")
-                        
-                        // Try writing ONLY to FFF5 this time (since FFF4 write didn't trigger response)
-                        Log.d(TAG, "Writing ONLY to FFF5 this time...")
+                        Log.d(TAG, "  Zero hash message: ${bytes.joinToString(" ") { "%02X".format(it) }}")
                         enqueueWrite(bytes)
                     }, 1000)
+                    
+                    // Original pairing message as fallback
+                    mainHandler.postDelayed({
+                        Log.d(TAG, "Sending original pairing message...")
+                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        enqueueWrite(msg.encode())
+                    }, 1500)
                     
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
@@ -400,64 +405,71 @@ class DjiDevice(private val context: Context) {
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val value = characteristic.value
             Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
-            if (value != null && value.isNotEmpty()) {
-                // Log first 100 bytes or entire message
-                val displayBytes = value.take(100)
-                Log.d(TAG, "  Raw bytes: ${displayBytes.joinToString(" ") { "%02X".format(it) }}${if(value.size > 100) "..." else ""}")
+            
+            // CRITICAL: Log ANY data we receive, even single bytes
+            if (value != null) {
+                Log.d(TAG, "  NOTIFICATION DATA (${value.size} bytes): ${value.joinToString(" ") { "%02X".format(it) }}")
                 
-                // Check for any known DJI patterns
-                if (value.size >= 2) {
-                    val firstTwo = "${"%02X".format(value[0])} ${"%02X".format(value[1])}"
-                    Log.d(TAG, "  First two bytes: $firstTwo")
-                    
-                    // Log as ASCII if it looks like text
-                    if (value.all { it in 32..126 }) {
-                        Log.d(TAG, "  As ASCII: ${String(value)}")
+                // Check different patterns
+                when {
+                    value.size > 0 && value[0] == 0x55.toByte() -> {
+                        Log.d(TAG, "  ✓ DJI message detected (starts with 0x55)")
+                    }
+                    value.size == 1 -> {
+                        Log.d(TAG, "  Single byte response: 0x${"%02X".format(value[0])}")
+                    }
+                    value.size == 2 -> {
+                        Log.d(TAG, "  Two byte response: 0x${"%02X".format(value[0])}${"%02X".format(value[1])}")
+                    }
+                    value.all { it in 32..126 } -> {
+                        Log.d(TAG, "  ASCII text: ${String(value)}")
+                    }
+                    else -> {
+                        Log.d(TAG, "  Unknown format")
                     }
                 }
             }
+            
             if (value == null || value.isEmpty()) {
                 Log.d(TAG, "  Empty notification received")
                 return
             }
             
-            // ALWAYS try to parse as DJI message, even in wrong state
-            try {
-                val message = DjiMessage.fromBytes(value)
-                Log.d(TAG, "  Successfully decoded DJI message!")
-                Log.d(TAG, "    Target: 0x${message.target.toString(16)}")
-                Log.d(TAG, "    Type: 0x${message.type.toString(16)}")
-                Log.d(TAG, "    ID: 0x${message.id.toString(16)}")
-                Log.d(TAG, "    Payload (${message.payload.size} bytes): ${message.payload.take(20).joinToString(" ") { "%02X".format(it) }}${if(message.payload.size > 20) "..." else ""}")
-                
-                // Process even if in unexpected state
-                when (state) {
-                    DjiDeviceState.CHECKING_IF_PAIRED -> {
-                        Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
-                        processCheckingIfPaired(message)
-                    }
-                    DjiDeviceState.PAIRING -> processPairing()
-                    DjiDeviceState.CLEANING_UP -> processCleaningUp(message)
-                    DjiDeviceState.PREPARING_STREAM -> processPreparingStream(message)
-                    DjiDeviceState.SETTING_UP_WIFI -> processSettingUpWifi(message)
-                    DjiDeviceState.CONFIGURING -> processConfiguring(message)
-                    DjiDeviceState.STARTING_STREAM -> processStartingStream(message)
-                    DjiDeviceState.STREAMING -> processStreaming(message)
-                    DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
-                    else -> {
-                        Log.d(TAG, "  Unexpected message in state $state - processing anyway")
-                        // Try processing as pairing response anyway
-                        if (message.id == PAIR_TRANSACTION_ID) {
-                            Log.d(TAG, "  This looks like a pairing response!")
+            // Try to parse as DJI message if it starts with 0x55
+            if (value.size > 0 && value[0] == 0x55.toByte()) {
+                try {
+                    val message = DjiMessage.fromBytes(value)
+                    Log.d(TAG, "  Successfully decoded DJI message!")
+                    Log.d(TAG, "    Target: 0x${message.target.toString(16)}")
+                    Log.d(TAG, "    Type: 0x${message.type.toString(16)}")
+                    Log.d(TAG, "    ID: 0x${message.id.toString(16)}")
+                    Log.d(TAG, "    Payload (${message.payload.size} bytes): ${message.payload.take(20).joinToString(" ") { "%02X".format(it) }}${if(message.payload.size > 20) "..." else ""}")
+                    
+                    // Process message based on state
+                    when (state) {
+                        DjiDeviceState.CHECKING_IF_PAIRED -> {
+                            Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
                             processCheckingIfPaired(message)
                         }
+                        DjiDeviceState.PAIRING -> processPairing()
+                        DjiDeviceState.CLEANING_UP -> processCleaningUp(message)
+                        DjiDeviceState.PREPARING_STREAM -> processPreparingStream(message)
+                        DjiDeviceState.SETTING_UP_WIFI -> processSettingUpWifi(message)
+                        DjiDeviceState.CONFIGURING -> processConfiguring(message)
+                        DjiDeviceState.STARTING_STREAM -> processStartingStream(message)
+                        DjiDeviceState.STREAMING -> processStreaming(message)
+                        DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
+                        else -> {
+                            Log.d(TAG, "  Unexpected message in state $state - processing anyway")
+                            // Try processing as pairing response anyway
+                            if (message.id == PAIR_TRANSACTION_ID) {
+                                Log.d(TAG, "  This looks like a pairing response!")
+                                processCheckingIfPaired(message)
+                            }
+                        }
                     }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Not a valid DJI message format: ${e.message}")
-                // Log raw data for analysis
-                if (value != null && value.size >= 4) {
-                    Log.e(TAG, "  Header candidate: ${value.take(4).joinToString(" ") { "%02X".format(it) }}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to decode as DJI message: ${e.message}")
                 }
             }
         }
