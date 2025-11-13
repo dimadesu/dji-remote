@@ -63,7 +63,8 @@ interface DjiDeviceDelegate {
 class DjiDevice(private val context: Context) {
     private var bluetoothGatt: BluetoothGatt? = null
     private var fff5Characteristic: BluetoothGattCharacteristic? = null
-    private var fff4Characteristic: BluetoothGattCharacteristic? = null  // Add FFF4 reference
+    private var fff4Characteristic: BluetoothGattCharacteristic? = null
+    private var fff3Characteristic: BluetoothGattCharacteristic? = null  // Add FFF3 reference
     private val mainHandler = Handler(Looper.getMainLooper())
     // MTU and write queue
     private var negotiatedMtu: Int = 23
@@ -322,14 +323,17 @@ class DjiDevice(private val context: Context) {
         Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
         isWritingDescriptor = true
         
+        // Enable BOTH notifications AND indications (0x03 00)
+        val descriptorValue = byteArrayOf(0x03, 0x00)
+        
         // Use new API for Android 13+ (API 33+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            val result = gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            Log.d(TAG, "  Descriptor write initiated (new API): result=$result")
+            val result = gatt.writeDescriptor(descriptor, descriptorValue)
+            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=0x0300 (NOTIFY+INDICATE)")
         } else {
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            descriptor.value = descriptorValue
             val result = gatt.writeDescriptor(descriptor)
-            Log.d(TAG, "  Descriptor write initiated (old API): result=$result")
+            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=0x0300 (NOTIFY+INDICATE)")
         }
     }
 
@@ -425,9 +429,18 @@ class DjiDevice(private val context: Context) {
                 Log.d(TAG, "  Service: ${service.uuid}")
                 val fff5 = service.getCharacteristic(FFF5_UUID)
                 val fff4 = service.getCharacteristic(FFF4_UUID)
+                val fff3 = service.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
                 
-                if (fff5 != null || fff4 != null) {
+                if (fff5 != null || fff4 != null || fff3 != null) {
                     Log.d(TAG, "Found DJI characteristics in service ${service.uuid}!")
+                    
+                    if (fff3 != null) {
+                        Log.d(TAG, "  Found FFF3 characteristic!")
+                        val properties = fff3.properties
+                        Log.d(TAG, "  FFF3 properties: 0x${properties.toString(16)}")
+                        Log.d(TAG, "    INDICATE: ${(properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0}")
+                        fff3Characteristic = fff3
+                    }
                     
                     if (fff5 != null) {
                         Log.d(TAG, "  Found FFF5 characteristic!")
@@ -436,6 +449,7 @@ class DjiDevice(private val context: Context) {
                         Log.d(TAG, "    WRITE_NO_RESPONSE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
                         Log.d(TAG, "    WRITE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
                         Log.d(TAG, "    NOTIFY: ${(properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                        Log.d(TAG, "    INDICATE: ${(properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0}")
                         fff5Characteristic = fff5
                     }
                     
@@ -444,6 +458,7 @@ class DjiDevice(private val context: Context) {
                         val fff4Props = fff4.properties
                         Log.d(TAG, "  FFF4 properties: 0x${fff4Props.toString(16)}")
                         Log.d(TAG, "    NOTIFY: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                        Log.d(TAG, "    INDICATE: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0}")
                         Log.d(TAG, "    READ: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_READ) != 0}")
                         Log.d(TAG, "    WRITE: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
                         Log.d(TAG, "    WRITE_NO_RESPONSE: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
@@ -585,10 +600,24 @@ class DjiDevice(private val context: Context) {
     }
 
     fun writeMessage(message: DjiMessage) {
-        Log.d(TAG, "writeMessage: target=${message.target}, type=${message.type}, id=${message.id}")
+        Log.d(TAG, "writeMessage: target=0x${message.target.toString(16)}, type=0x${message.type.toString(16)}, id=0x${message.id.toString(16)}")
         val bytes = message.encode()
         Log.d(TAG, "  Encoded ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-        enqueueWrite(bytes)
+        
+        // Try writing to FFF3 with WRITE (with response) for important messages
+        val gatt = bluetoothGatt
+        if (gatt != null && fff3Characteristic != null) {
+            mainHandler.post {
+                Log.d(TAG, "  Trying to write to FFF3 with response...")
+                fff3Characteristic?.value = bytes
+                fff3Characteristic?.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                val result = gatt.writeCharacteristic(fff3Characteristic)
+                Log.d(TAG, "  FFF3 write result: $result")
+            }
+        } else {
+            // Fall back to FFF5 with WRITE_NO_RESPONSE
+            enqueueWrite(bytes)
+        }
     }
 
     private fun enqueueWrite(value: ByteArray) {
