@@ -23,13 +23,31 @@ fun DjiDeviceSettingsScreen(
     var password by remember { mutableStateOf(device.wifiPassword) }
     var rtmpUrl by remember { mutableStateOf(device.customRtmpUrl) }
     var resolution by remember { mutableStateOf(device.resolution) }
-    var bitrate by remember { mutableStateOf(device.bitrate.toString()) }
-    var imageStabilization by remember { mutableStateOf(device.imageStabilization) }
+    var bitrate by remember { mutableStateOf(device.bitrate) }
+    var imageStabilization by remember { mutableStateOf(
+        when {
+            !device.imageStabilization -> "Off"
+            else -> "RockSteady"
+        }
+    ) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
     var expandedResolution by remember { mutableStateOf(false) }
+    var expandedBitrate by remember { mutableStateOf(false) }
+    var expandedImageStab by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
     val resolutionOptions = listOf("480p", "720p", "1080p")
+    val bitrateOptions = listOf(
+        20_000_000,
+        16_000_000,
+        12_000_000,
+        10_000_000,
+        8_000_000,
+        6_000_000,
+        4_000_000,
+        2_000_000
+    )
+    val imageStabOptions = listOf("Off", "RockSteady", "RockSteady+", "HorizonBalancing", "HorizonSteady")
     
     Column(
         modifier = Modifier
@@ -143,22 +161,64 @@ fun DjiDeviceSettingsScreen(
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        TextField(
-            value = bitrate,
-            onValueChange = { bitrate = it },
-            label = { Text("Bitrate (bps)") },
-            placeholder = { Text("4000000") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        // Bitrate dropdown
+        ExposedDropdownMenuBox(
+            expanded = expandedBitrate,
+            onExpandedChange = { expandedBitrate = !expandedBitrate }
+        ) {
+            TextField(
+                value = "${bitrate / 1_000_000} Mbps (${bitrate} bps)",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Bitrate") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBitrate) },
+                modifier = Modifier.fillMaxWidth().menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = expandedBitrate,
+                onDismissRequest = { expandedBitrate = false }
+            ) {
+                bitrateOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text("${option / 1_000_000} Mbps") },
+                        onClick = {
+                            bitrate = option
+                            expandedBitrate = false
+                        }
+                    )
+                }
+            }
+        }
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+        // Image Stabilization dropdown
+        ExposedDropdownMenuBox(
+            expanded = expandedImageStab,
+            onExpandedChange = { expandedImageStab = !expandedImageStab }
         ) {
-            Text("Image Stabilization", modifier = Modifier.weight(1f))
-            Switch(checked = imageStabilization, onCheckedChange = { imageStabilization = it })
+            TextField(
+                value = imageStabilization,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Image Stabilization") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedImageStab) },
+                modifier = Modifier.fillMaxWidth().menuAnchor()
+            )
+            ExposedDropdownMenu(
+                expanded = expandedImageStab,
+                onDismissRequest = { expandedImageStab = false }
+            ) {
+                imageStabOptions.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            imageStabilization = option
+                            expandedImageStab = false
+                        }
+                    )
+                }
+            }
         }
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -214,8 +274,8 @@ fun DjiDeviceSettingsScreen(
                     device.wifiPassword = password
                     device.customRtmpUrl = rtmpUrl
                     device.resolution = resolution
-                    device.bitrate = bitrate.toIntOrNull() ?: 4_000_000
-                    device.imageStabilization = imageStabilization
+                    device.bitrate = bitrate
+                    device.imageStabilization = imageStabilization != "Off"
                     device.autoRestartStream = autoRestart
                     DjiRepository.updateDevice(device)
                     onBack()
@@ -234,8 +294,8 @@ fun DjiDeviceSettingsScreen(
                         device.wifiPassword = password
                         device.customRtmpUrl = rtmpUrl
                         device.resolution = resolution
-                        device.bitrate = bitrate.toIntOrNull() ?: 4_000_000
-                        device.imageStabilization = imageStabilization
+                        device.bitrate = bitrate
+                        device.imageStabilization = imageStabilization != "Off"
                         device.autoRestartStream = autoRestart
                         DjiRepository.updateDevice(device)
                         
