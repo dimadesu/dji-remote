@@ -118,6 +118,10 @@ object DjiBleScanner {
                         return
                     }
                     
+                    // Detect and log model
+                    val model = getModelFromScanRecord(scanRecord)
+                    Log.d(TAG, "  Device model: $model")
+                    
                     val id = UUID.nameUUIDFromBytes(address.toByteArray(StandardCharsets.UTF_8)).toString()
                     synchronized(foundDevices) {
                         if (foundDevices.none { it.first == id }) {
@@ -198,5 +202,38 @@ object DjiBleScanner {
         }
         
         return false
+    }
+    
+    fun getModelFromScanRecord(record: ScanRecord?): SettingsDjiDeviceModel {
+        if (record == null) return SettingsDjiDeviceModel.UNKNOWN
+        
+        val djiManufacturerId = 2218
+        val data = record.getManufacturerSpecificData(djiManufacturerId)
+        
+        if (data != null && data.size >= 2) {
+            // Model is in bytes 0-1 of manufacturer data (little-endian)
+            val modelId = (data[0].toInt() and 0xFF) or ((data[1].toInt() and 0xFF) shl 8)
+            Log.d(TAG, "  Model ID from manufacturer data: 0x${modelId.toString(16)}")
+            return when (modelId) {
+                0x0014 -> {
+                    Log.d(TAG, "  Detected: OSMO_ACTION_4")
+                    SettingsDjiDeviceModel.OSMO_ACTION_4
+                }
+                0x0015 -> {
+                    Log.d(TAG, "  Detected: OSMO_ACTION_5_PRO")
+                    SettingsDjiDeviceModel.OSMO_ACTION_5_PRO
+                }
+                0x0020 -> {
+                    Log.d(TAG, "  Detected: OSMO_POCKET_3")
+                    SettingsDjiDeviceModel.OSMO_POCKET_3
+                }
+                else -> {
+                    Log.d(TAG, "  Unknown model ID: 0x${modelId.toString(16)}")
+                    SettingsDjiDeviceModel.UNKNOWN
+                }
+            }
+        }
+        
+        return SettingsDjiDeviceModel.UNKNOWN
     }
 }

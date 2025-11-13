@@ -360,15 +360,20 @@ class DjiDevice(private val context: Context) {
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val value = characteristic.value
-            Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}")
-            if (value != null) {
+            Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
+            if (value != null && value.isNotEmpty()) {
                 Log.d(TAG, "  Raw bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
             }
-            if (value == null || value.isEmpty()) return
+            if (value == null || value.isEmpty()) {
+                Log.d(TAG, "  Empty notification received")
+                return
+            }
             
             // Check if this is just a notification enable confirmation (some devices send empty notifications)
             if (value.size < 10) {
-                Log.d(TAG, "  Short message, might be notification confirmation")
+                Log.d(TAG, "  Short message, might be notification confirmation or camera response")
+                // Don't ignore short messages - they might be important
+                // Try to decode anyway
             }
             
             try {
