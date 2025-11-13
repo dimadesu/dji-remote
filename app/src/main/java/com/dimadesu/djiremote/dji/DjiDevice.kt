@@ -193,9 +193,23 @@ class DjiDevice(private val context: Context) {
             return
         }
         val device = adapter.getRemoteDevice(address)
-        Log.d(TAG, "Got remote device, calling connectGatt...")
-        bluetoothGatt = device.connectGatt(context, false, gattCallback)
-        setState(DjiDeviceState.CONNECTING)
+        Log.d(TAG, "Got remote device, bond state: ${device.bondState}")
+        
+        // Try creating bond if not bonded
+        if (device.bondState == android.bluetooth.BluetoothDevice.BOND_NONE) {
+            Log.d(TAG, "Device not bonded, attempting to create bond...")
+            device.createBond()
+            // Wait a bit for bonding, then connect
+            mainHandler.postDelayed({
+                Log.d(TAG, "Bond state after delay: ${device.bondState}, calling connectGatt...")
+                bluetoothGatt = device.connectGatt(context, false, gattCallback)
+                setState(DjiDeviceState.CONNECTING)
+            }, 2000)
+        } else {
+            Log.d(TAG, "Device already bonded or bonding, calling connectGatt...")
+            bluetoothGatt = device.connectGatt(context, false, gattCallback)
+            setState(DjiDeviceState.CONNECTING)
+        }
     }
     
     private fun writeNextDescriptor() {
@@ -228,14 +242,14 @@ class DjiDevice(private val context: Context) {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             Log.d(TAG, "onConnectionStateChange: status=$status, newState=$newState")
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                Log.d(TAG, "Connected! Requesting MTU and discovering services...")
+                Log.d(TAG, "Connected! Requesting MTU...")
                 // request a large MTU (max 517) then discover services; MTU change is async
                 try {
                     gatt.requestMtu(517)
                 } catch (e: Exception) {
-                    // ignore if not supported
+                    Log.w(TAG, "MTU request failed, discovering services anyway")
+                    gatt.discoverServices()
                 }
-                gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.w(TAG, "Disconnected from device (status=$status)")
                 reset()
@@ -247,28 +261,70 @@ class DjiDevice(private val context: Context) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 negotiatedMtu = mtu
             }
+            // Now discover services after MTU is set
+            Log.d(TAG, "MTU negotiated, discovering services...")
+            gatt.discoverServices()
         }
         
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-            Log.d(TAG, "onDescriptorWrite: descriptor=${descriptor.uuid}, status=$status")
+            Log.d(TAG, "onDescriptorWrite: descriptor=${descriptor.uuid}, status=$status, characteristic=${descriptor.characteristic.uuid}, state=$state")
             isWritingDescriptor = false
             
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Continue with next descriptor or start pairing check if done
-                if (descriptorWriteQueue.isEmpty()) {
-                    Log.d(TAG, "All descriptors written, starting pairing check...")
-                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
-                    // Send pair check: in iOS this is implemented by expecting a response for pairTransactionId
-                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                    writeMessage(msg)
-                } else {
+                // Check if this was the FFF4 characteristic's notification descriptor
+                if (descriptor.characteristic.uuid == FFF4_UUID && descriptorWriteQueue.isEmpty()) {
+                    // Guard on state like Moblin does
+                    if (state != DjiDeviceState.CONNECTING) {
+                        Log.w(TAG, "FFF4 notification enabled but not in CONNECTING state, ignoring")
+                        return
+                    }
+                    Log.d(TAG, "FFF4 notifications enabled in CONNECTING state, will send pairing message after 500ms delay...")
+                    
+                    // Try reading from FFF4 first - maybe this triggers something?
+                    val fff4Char = bluetoothGatt?.services?.flatMap { it.characteristics }
+                        ?.find { it.uuid == FFF4_UUID }
+                    if (fff4Char != null) {
+                        Log.d(TAG, "  Attempting to read from FFF4 characteristic...")
+                        bluetoothGatt?.readCharacteristic(fff4Char)
+                    }
+                    
+                    // Give camera more time to fully enable notifications (500ms instead of 100ms)
+                    mainHandler.postDelayed({
+                        if (state != DjiDeviceState.CONNECTING) {
+                            Log.w(TAG, "State changed before pairing message sent, aborting")
+                            return@postDelayed
+                        }
+                        
+                        Log.d(TAG, "Sending pairing message now...")
+                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        val bytes = msg.encode()
+                        Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+                        
+                        // Write directly without queuing (single message, fits in MTU)
+                        // Try WRITE_TYPE_DEFAULT (with response) for pairing - maybe Android needs this?
+                        val char = fff5Characteristic
+                        if (char != null && bluetoothGatt != null) {
+                            char.value = bytes
+                            char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                            Log.d(TAG, "  Using WRITE_TYPE_DEFAULT for pairing message")
+                            bluetoothGatt!!.writeCharacteristic(char)
+                            Log.d(TAG, "  Pairing message written directly to FFF5")
+                        } else {
+                            Log.e(TAG, "  Cannot write pairing: fff5Characteristic or gatt is null!")
+                        }
+                        
+                        setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    }, 500)
+                } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
             } else {
                 Log.e(TAG, "Descriptor write failed with status $status")
                 // Try next one anyway
-                writeNextDescriptor()
+                if (!descriptorWriteQueue.isEmpty()) {
+                    writeNextDescriptor()
+                }
             }
         }
 
@@ -286,16 +342,30 @@ class DjiDevice(private val context: Context) {
                 if (char != null) {
                     Log.d(TAG, "Found FFF5 characteristic!")
                     fff5Characteristic = char
-                    // enable notifications on all characteristics similar to iOS
+                    
+                    // Queue descriptor writes: FFF4 must be last (triggers pairing when enabled)
+                    val fff4Descriptor = service.getCharacteristic(FFF4_UUID)
+                        ?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                    
+                    // Enable notifications on all characteristics
                     for (c in service.characteristics) {
                         Log.d(TAG, "    Enabling notifications for: ${c.uuid}")
                         gatt.setCharacteristicNotification(c, true)
-                        // Queue descriptor write to enable notifications
-                        val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                        if (descriptor != null) {
-                            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            descriptorWriteQueue.add(descriptor)
+                        // Queue descriptor write - but skip FFF4 for now
+                        if (c.uuid != FFF4_UUID) {
+                            val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                            if (descriptor != null) {
+                                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                descriptorWriteQueue.add(descriptor)
+                            }
                         }
+                    }
+                    
+                    // Add FFF4 descriptor last
+                    if (fff4Descriptor != null) {
+                        Log.d(TAG, "    Adding FFF4 descriptor last")
+                        fff4Descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        descriptorWriteQueue.add(fff4Descriptor)
                     }
                     break
                 }
@@ -306,17 +376,26 @@ class DjiDevice(private val context: Context) {
                 return
             }
             
-            // Start writing descriptors, pairing check will happen after all complete
+            // Start writing descriptors, pairing will happen when FFF4 is enabled
             Log.d(TAG, "Starting descriptor writes (${descriptorWriteQueue.size} queued)...")
             writeNextDescriptor()
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            val value = characteristic.value ?: return
+            val value = characteristic.value
+            Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}")
+            if (value != null) {
+                Log.d(TAG, "  Raw bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
+            }
+            if (value == null) return
             try {
                 val message = DjiMessage.fromBytes(value)
+                Log.d(TAG, "  Decoded message: target=${message.target}, type=${message.type}, id=${message.id}, payload=${message.payload.size} bytes")
                 when (state) {
-                    DjiDeviceState.CHECKING_IF_PAIRED -> processCheckingIfPaired(message)
+                    DjiDeviceState.CHECKING_IF_PAIRED -> {
+                        Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
+                        processCheckingIfPaired(message)
+                    }
                     DjiDeviceState.PAIRING -> processPairing()
                     DjiDeviceState.CLEANING_UP -> processCleaningUp(message)
                     DjiDeviceState.PREPARING_STREAM -> processPreparingStream(message)
@@ -326,22 +405,34 @@ class DjiDevice(private val context: Context) {
                     DjiDeviceState.STREAMING -> processStreaming(message)
                     DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
                     else -> {
-                        // ignore
+                        Log.d(TAG, "  State $state - ignoring message")
                     }
                 }
             } catch (e: Exception) {
-                // ignore corrupt messages
+                Log.e(TAG, "Error processing message: ${e.message}", e)
+                if (value != null) {
+                    Log.e(TAG, "  Failed to decode: ${value.joinToString(" ") { "%02X".format(it) }}")
+                }
             }
         }
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-            // We still pace writes via a handler; if platform provides acks for writes
-            // we can optionally react here. For now we rely on pacing.
+            Log.d(TAG, "onCharacteristicWrite: characteristic=${characteristic.uuid}, status=$status")
+        }
+        
+        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
+            val value = characteristic.value
+            Log.d(TAG, "onCharacteristicRead: characteristic=${characteristic.uuid}, status=$status, bytes=${value?.size ?: 0}")
+            if (value != null) {
+                Log.d(TAG, "  Read bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
+            }
         }
     }
 
     fun writeMessage(message: DjiMessage) {
+        Log.d(TAG, "writeMessage: target=${message.target}, type=${message.type}, id=${message.id}")
         val bytes = message.encode()
+        Log.d(TAG, "  Encoded ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
         enqueueWrite(bytes)
     }
 
@@ -349,12 +440,15 @@ class DjiDevice(private val context: Context) {
         // Split into chunks of (negotiatedMtu - overhead)
         val payloadSize = maxOf(1, negotiatedMtu - writePayloadOverhead)
         var offset = 0
+        var chunkCount = 0
         while (offset < value.size) {
             val end = minOf(offset + payloadSize, value.size)
             val chunk = value.copyOfRange(offset, end)
             writeQueue.addLast(chunk)
+            chunkCount++
             offset = end
         }
+        Log.d(TAG, "  Enqueued $chunkCount chunks (payloadSize=$payloadSize)")
         startWriteLoopIfNeeded()
     }
 
@@ -367,15 +461,18 @@ class DjiDevice(private val context: Context) {
     private fun writeNextChunk() {
         val chunk = writeQueue.removeFirstOrNull()
         if (chunk == null) {
+            Log.d(TAG, "writeNextChunk: queue empty, stopping write loop")
             isWriting = false
             return
         }
         val char = fff5Characteristic ?: run {
+            Log.e(TAG, "writeNextChunk: fff5Characteristic is null!")
             // clear queue if characteristic missing
             writeQueue.clear()
             isWriting = false
             return
         }
+        Log.d(TAG, "writeNextChunk: writing ${chunk.size} bytes")
         char.value = chunk
         char.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         bluetoothGatt?.writeCharacteristic(char)

@@ -106,15 +106,21 @@ object DjiModel : DjiDeviceDelegate {
                 DjiDeviceState.WIFI_SETUP_FAILED -> SettingsDjiDeviceState.WIFI_SETUP_FAILED
                 else -> SettingsDjiDeviceState.UNKNOWN
             }
-            val updated = existing.copy(state = newState)
-            DjiRepository.updateDevice(updated)
+            
+            // Update device state (isStarted is transient, will reset to false on reload)
+            existing.state = newState
+            DjiRepository.updateDevice(existing)
 
             // Auto-restart logic: if device went to IDLE or WIFI_SETUP_FAILED and the
             // settings indicate autoRestartStream and isStarted (user-initiated), schedule a restart.
             when (state) {
                 DjiDeviceState.IDLE, DjiDeviceState.WIFI_SETUP_FAILED -> {
                     if (existing.autoRestartStream && existing.isStarted) {
-                        scheduleRestartForAddress(existing.bluetoothPeripheralAddress, updated)
+                        // Clear isStarted when going to IDLE
+                        existing.isStarted = false
+                        scheduleRestartForAddress(existing.bluetoothPeripheralAddress, existing)
+                    } else {
+                        existing.isStarted = false
                     }
                 }
                 DjiDeviceState.STREAMING -> {
