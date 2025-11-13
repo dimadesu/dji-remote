@@ -217,7 +217,16 @@ class DjiDevice(private val context: Context) {
         
         Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
         isWritingDescriptor = true
-        gatt.writeDescriptor(descriptor)
+        
+        // Use new API for Android 13+ (API 33+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            val result = gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            Log.d(TAG, "  Descriptor write initiated (new API): result=$result")
+        } else {
+            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            val result = gatt.writeDescriptor(descriptor)
+            Log.d(TAG, "  Descriptor write initiated (old API): result=$result")
+        }
     }
 
     fun disconnect() {
