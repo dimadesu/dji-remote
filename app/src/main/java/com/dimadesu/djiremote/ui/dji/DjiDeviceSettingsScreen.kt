@@ -55,24 +55,26 @@ fun DjiDeviceSettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Name
+        // Name section (no header in Moblin)
         TextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Device Name") },
+            label = { Text("Name") },
             modifier = Modifier.fillMaxWidth()
         )
         
         Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
         
-        // Bluetooth device selection
-        Text("Bluetooth Device", style = MaterialTheme.typography.labelMedium)
-        Spacer(modifier = Modifier.height(4.dp))
+        // Device section
+        Text("Device", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = onOpenScanner,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(device.bluetoothPeripheralName ?: "Select Bluetooth device")
+            Text(device.bluetoothPeripheralName ?: "Select device")
         }
         if (device.bluetoothPeripheralAddress != null) {
             Text(
@@ -86,8 +88,8 @@ fun DjiDeviceSettingsScreen(
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
         
-        // WiFi Settings
-        Text("WiFi Settings", style = MaterialTheme.typography.titleMedium)
+        // WiFi section
+        Text("WiFi", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         
         TextField(
@@ -106,18 +108,25 @@ fun DjiDeviceSettingsScreen(
             modifier = Modifier.fillMaxWidth()
         )
         
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "The DJI device will connect to and stream RTMP over this WiFi.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
         Spacer(modifier = Modifier.height(16.dp))
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
         
-        // RTMP Settings
-        Text("RTMP Settings", style = MaterialTheme.typography.titleMedium)
+        // RTMP section
+        Text("RTMP", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         
         TextField(
             value = rtmpUrl,
             onValueChange = { rtmpUrl = it },
-            label = { Text("RTMP URL") },
+            label = { Text("URL") },
             placeholder = { Text("rtmp://server/live/stream") },
             modifier = Modifier.fillMaxWidth()
         )
@@ -126,8 +135,8 @@ fun DjiDeviceSettingsScreen(
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Stream Settings
-        Text("Stream Settings", style = MaterialTheme.typography.titleMedium)
+        // Settings section
+        Text("Settings", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         
         // Resolution dropdown
@@ -221,13 +230,23 @@ fun DjiDeviceSettingsScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "High bitrates may be unstable.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         
+        Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Auto-restart section (no header, just toggle)
         Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Auto Restart", modifier = Modifier.weight(1f))
+            Text("Auto-restart live stream when broken", modifier = Modifier.weight(1f))
             Switch(checked = autoRestart, onCheckedChange = { autoRestart = it })
         }
         
@@ -235,40 +254,36 @@ fun DjiDeviceSettingsScreen(
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Status
-        Text("Status", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Card(
+        // Status section (no header in Moblin, just centered text)
+        Box(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
+            contentAlignment = androidx.compose.ui.Alignment.Center
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "State: ${device.state.name}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (device.bluetoothPeripheralName != null) {
-                    Text(
-                        text = "Device: ${device.bluetoothPeripheralName}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
+            Text(
+                text = when (device.state) {
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.IDLE -> "Not started"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.DISCOVERING -> "Discovering"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.CONNECTING -> "Connecting"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.PAIRING -> "Pairing"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.PREPARING_STREAM -> "Preparing to stream"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STARTING_STREAM -> "Starting stream"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STREAMING -> "Streaming"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.WIFI_SETUP_FAILED -> "WiFi setup failed"
+                    else -> "Unknown"
+                },
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
         
         Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
         
-        // Action Buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        // Start/Stop button section (no header in Moblin)
+        if (!device.isStarted) {
             Button(
                 onClick = {
-                    // Save all changes
+                    // Save before starting
                     device.name = name
                     device.wifiSsid = ssid
                     device.wifiPassword = password
@@ -278,65 +293,25 @@ fun DjiDeviceSettingsScreen(
                     device.imageStabilization = imageStabilization != "Off"
                     device.autoRestartStream = autoRestart
                     DjiRepository.updateDevice(device)
-                    onBack()
+                    
+                    com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, device)
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save")
+                Text("Start live stream")
             }
-            
-            if (!device.isStarted) {
-                Button(
-                    onClick = {
-                        // Save before starting
-                        device.name = name
-                        device.wifiSsid = ssid
-                        device.wifiPassword = password
-                        device.customRtmpUrl = rtmpUrl
-                        device.resolution = resolution
-                        device.bitrate = bitrate
-                        device.imageStabilization = imageStabilization != "Off"
-                        device.autoRestartStream = autoRestart
-                        DjiRepository.updateDevice(device)
-                        
-                        com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, device)
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("Start Stream")
-                }
-            } else {
-                Button(
-                    onClick = {
-                        com.dimadesu.djiremote.dji.DjiModel.stopStreaming(device)
-                    },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Stop Stream")
-                }
+        } else {
+            Button(
+                onClick = {
+                    com.dimadesu.djiremote.dji.DjiModel.stopStreaming(device)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("Stop live stream")
             }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // Delete button
-        OutlinedButton(
-            onClick = {
-                DjiRepository.removeDevice(device.id)
-                onBack()
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error
-            )
-        ) {
-            Text("Delete Device")
         }
     }
 }
