@@ -18,7 +18,7 @@ class ByteReader(private val data: ByteArray) {
         checkRemaining(2)
         val lo = data[pos++].toInt() and 0xFF
         val hi = data[pos++].toInt() and 0xFF
-        return (hi shl 8) or lo
+        return lo or (hi shl 8)  // Correct little-endian: low byte first
     }
 
     fun readUInt24Le(): Int {
@@ -26,7 +26,7 @@ class ByteReader(private val data: ByteArray) {
         val b0 = data[pos++].toInt() and 0xFF
         val b1 = data[pos++].toInt() and 0xFF
         val b2 = data[pos++].toInt() and 0xFF
-        return (b2 shl 16) or (b1 shl 8) or b0
+        return b0 or (b1 shl 8) or (b2 shl 16)  // Correct little-endian order
     }
 
     fun readBytes(count: Int): ByteArray {
