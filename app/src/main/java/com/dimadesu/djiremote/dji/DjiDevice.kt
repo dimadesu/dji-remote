@@ -60,6 +60,7 @@ interface DjiDeviceDelegate {
 class DjiDevice(private val context: Context) {
     private var bluetoothGatt: BluetoothGatt? = null
     private var fff5Characteristic: BluetoothGattCharacteristic? = null
+    private var fff4Characteristic: BluetoothGattCharacteristic? = null  // Add FFF4 reference
     private val mainHandler = Handler(Looper.getMainLooper())
     // MTU and write queue
     private var negotiatedMtu: Int = 23
@@ -277,17 +278,41 @@ class DjiDevice(private val context: Context) {
                         return
                     }
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
-                    Log.d(TAG, "  Sending pairing message immediately...")
-                    
-                    // Send pairing message immediately (matching iOS exactly)
-                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                    val bytes = msg.encode()
-                    Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-                    enqueueWrite(bytes)
-                    
-                    // Transition to CHECKING_IF_PAIRED after sending
                     setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    
+                    // NEW APPROACH: Try writing to FFF4 instead of FFF5
+                    Log.d(TAG, "NEW APPROACH: Trying to write pairing message to FFF4...")
+                    
+                    mainHandler.postDelayed({
+                        Log.d(TAG, "Writing pairing message to FFF4 characteristic...")
+                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                        val bytes = msg.encode()
+                        Log.d(TAG, "  Message: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+                        
+                        // Try writing to FFF4 instead
+                        val fff4 = fff4Characteristic
+                        if (fff4 != null) {
+                            Log.d(TAG, "  Writing to FFF4...")
+                            fff4.value = bytes
+                            // Check FFF4 properties and use appropriate write type
+                            val props = fff4.properties
+                            if ((props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+                                fff4.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                            } else if ((props and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0) {
+                                fff4.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                            }
+                            val writeResult = gatt.writeCharacteristic(fff4)
+                            Log.d(TAG, "  FFF4 write result: $writeResult")
+                        } else {
+                            Log.e(TAG, "  FFF4 characteristic is null!")
+                        }
+                        
+                        // Also try writing to FFF5 as before
+                        Log.d(TAG, "  Also writing to FFF5...")
+                        enqueueWrite(bytes)
+                    }, 500)
+                    
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
@@ -310,28 +335,35 @@ class DjiDevice(private val context: Context) {
             Log.d(TAG, "Found ${serviceList.size} services")
             for (service in serviceList) {
                 Log.d(TAG, "  Service: ${service.uuid}")
-                val char = service.getCharacteristic(FFF5_UUID)
-                if (char != null) {
-                    Log.d(TAG, "Found FFF5 characteristic!")
-                    // Check characteristic properties
-                    val properties = char.properties
-                    Log.d(TAG, "  FFF5 properties: 0x${properties.toString(16)}")
-                    Log.d(TAG, "    WRITE_NO_RESPONSE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
-                    Log.d(TAG, "    WRITE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
-                    Log.d(TAG, "    NOTIFY: ${(properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                val fff5 = service.getCharacteristic(FFF5_UUID)
+                val fff4 = service.getCharacteristic(FFF4_UUID)
+                
+                if (fff5 != null || fff4 != null) {
+                    Log.d(TAG, "Found DJI characteristics in service ${service.uuid}!")
                     
-                    fff5Characteristic = char
+                    if (fff5 != null) {
+                        Log.d(TAG, "  Found FFF5 characteristic!")
+                        val properties = fff5.properties
+                        Log.d(TAG, "  FFF5 properties: 0x${properties.toString(16)}")
+                        Log.d(TAG, "    WRITE_NO_RESPONSE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
+                        Log.d(TAG, "    WRITE: ${(properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
+                        Log.d(TAG, "    NOTIFY: ${(properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                        fff5Characteristic = fff5
+                    }
                     
-                    // Check FFF4 properties too
-                    val fff4Char = service.getCharacteristic(FFF4_UUID)
-                    if (fff4Char != null) {
-                        val fff4Props = fff4Char.properties
+                    if (fff4 != null) {
+                        Log.d(TAG, "  Found FFF4 characteristic!")
+                        val fff4Props = fff4.properties
                         Log.d(TAG, "  FFF4 properties: 0x${fff4Props.toString(16)}")
                         Log.d(TAG, "    NOTIFY: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0}")
+                        Log.d(TAG, "    READ: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_READ) != 0}")
+                        Log.d(TAG, "    WRITE: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0}")
+                        Log.d(TAG, "    WRITE_NO_RESPONSE: ${(fff4Props and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0}")
+                        fff4Characteristic = fff4
                     }
                     
                     // Queue descriptor writes: FFF4 must be last (triggers pairing when enabled)
-                    val fff4Descriptor = fff4Char?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
+                    val fff4Descriptor = fff4?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                     
                     // Enable notifications on all characteristics
                     for (c in service.characteristics) {
@@ -341,7 +373,6 @@ class DjiDevice(private val context: Context) {
                         if (c.uuid != FFF4_UUID) {
                             val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                             if (descriptor != null) {
-                                descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                                 descriptorWriteQueue.add(descriptor)
                             }
                         }
@@ -350,7 +381,6 @@ class DjiDevice(private val context: Context) {
                     // Add FFF4 descriptor last
                     if (fff4Descriptor != null) {
                         Log.d(TAG, "    Adding FFF4 descriptor last")
-                        fff4Descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         descriptorWriteQueue.add(fff4Descriptor)
                     }
                     break
@@ -371,25 +401,36 @@ class DjiDevice(private val context: Context) {
             val value = characteristic.value
             Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
             if (value != null && value.isNotEmpty()) {
-                Log.d(TAG, "  Raw bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
+                // Log first 100 bytes or entire message
+                val displayBytes = value.take(100)
+                Log.d(TAG, "  Raw bytes: ${displayBytes.joinToString(" ") { "%02X".format(it) }}${if(value.size > 100) "..." else ""}")
+                
+                // Check for any known DJI patterns
+                if (value.size >= 2) {
+                    val firstTwo = "${"%02X".format(value[0])} ${"%02X".format(value[1])}"
+                    Log.d(TAG, "  First two bytes: $firstTwo")
+                    
+                    // Log as ASCII if it looks like text
+                    if (value.all { it in 32..126 }) {
+                        Log.d(TAG, "  As ASCII: ${String(value)}")
+                    }
+                }
             }
             if (value == null || value.isEmpty()) {
                 Log.d(TAG, "  Empty notification received")
                 return
             }
             
-            // Check if this is just a notification enable confirmation (some devices send empty notifications)
-            if (value.size < 10) {
-                Log.d(TAG, "  Short message, might be notification confirmation or camera response")
-                // Don't ignore short messages - they might be important
-                // Try to decode anyway
-            }
-            
+            // ALWAYS try to parse as DJI message, even in wrong state
             try {
                 val message = DjiMessage.fromBytes(value)
-                Log.d(TAG, "  Decoded message: target=0x${message.target.toString(16)}, type=0x${message.type.toString(16)}, id=0x${message.id.toString(16)}, payload=${message.payload.size} bytes")
-                Log.d(TAG, "  Payload: ${message.payload.joinToString(" ") { "%02X".format(it) }}")
+                Log.d(TAG, "  Successfully decoded DJI message!")
+                Log.d(TAG, "    Target: 0x${message.target.toString(16)}")
+                Log.d(TAG, "    Type: 0x${message.type.toString(16)}")
+                Log.d(TAG, "    ID: 0x${message.id.toString(16)}")
+                Log.d(TAG, "    Payload (${message.payload.size} bytes): ${message.payload.take(20).joinToString(" ") { "%02X".format(it) }}${if(message.payload.size > 20) "..." else ""}")
                 
+                // Process even if in unexpected state
                 when (state) {
                     DjiDeviceState.CHECKING_IF_PAIRED -> {
                         Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
@@ -404,13 +445,19 @@ class DjiDevice(private val context: Context) {
                     DjiDeviceState.STREAMING -> processStreaming(message)
                     DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
                     else -> {
-                        Log.d(TAG, "  State $state - ignoring message")
+                        Log.d(TAG, "  Unexpected message in state $state - processing anyway")
+                        // Try processing as pairing response anyway
+                        if (message.id == PAIR_TRANSACTION_ID) {
+                            Log.d(TAG, "  This looks like a pairing response!")
+                            processCheckingIfPaired(message)
+                        }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error processing message: ${e.message}", e)
-                if (value != null) {
-                    Log.e(TAG, "  Failed to decode: ${value.joinToString(" ") { "%02X".format(it) }}")
+                Log.e(TAG, "Not a valid DJI message format: ${e.message}")
+                // Log raw data for analysis
+                if (value != null && value.size >= 4) {
+                    Log.e(TAG, "  Header candidate: ${value.take(4).joinToString(" ") { "%02X".format(it) }}")
                 }
             }
         }
