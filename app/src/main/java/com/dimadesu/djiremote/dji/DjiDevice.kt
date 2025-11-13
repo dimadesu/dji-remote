@@ -323,15 +323,27 @@ class DjiDevice(private val context: Context) {
         Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
         isWritingDescriptor = true
         
+        // FFF3 uses INDICATE, FFF4 and FFF5 use NOTIFY
+        val descriptorValue = if (descriptor.characteristic.uuid.toString() == "0000fff3-0000-1000-8000-00805f9b34fb") {
+            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE  // 0x02 00 for FFF3
+        } else {
+            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE // 0x01 00 for FFF4/FFF5
+        }
+        
+        val valueStr = if (descriptorValue.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
+            "0x0200 (INDICATE)"
+        } else {
+            "0x0100 (NOTIFY)"
+        }
+        
         // Use new API for Android 13+ (API 33+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            // Just enable notifications (not indications) - DJI doesn't support both
-            val result = gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=0x0100 (NOTIFY only)")
+            val result = gatt.writeDescriptor(descriptor, descriptorValue)
+            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=$valueStr")
         } else {
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            descriptor.value = descriptorValue
             val result = gatt.writeDescriptor(descriptor)
-            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=0x0100 (NOTIFY only)")
+            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=$valueStr")
         }
     }
 
