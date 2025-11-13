@@ -277,26 +277,17 @@ class DjiDevice(private val context: Context) {
                         return
                     }
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
-                    Log.d(TAG, "  Waiting 100ms for notifications to settle...")
+                    Log.d(TAG, "  Sending pairing message immediately...")
                     
-                    // Small delay to ensure notifications are fully established
-                    mainHandler.postDelayed({
-                        if (state != DjiDeviceState.CONNECTING) {
-                            Log.d(TAG, "State changed during wait, aborting pairing")
-                            return@postDelayed
-                        }
-                        
-                        Log.d(TAG, "  Sending pairing message now...")
-                        // Send pairing message (matching iOS behavior)
-                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                        val bytes = msg.encode()
-                        Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-                        enqueueWrite(bytes)
-                        
-                        // Transition to CHECKING_IF_PAIRED after sending
-                        setState(DjiDeviceState.CHECKING_IF_PAIRED)
-                    }, 100)
+                    // Send pairing message immediately (matching iOS exactly)
+                    val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                    val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                    val bytes = msg.encode()
+                    Log.d(TAG, "  Pairing message ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+                    enqueueWrite(bytes)
+                    
+                    // Transition to CHECKING_IF_PAIRED after sending
+                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
