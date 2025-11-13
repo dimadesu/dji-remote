@@ -24,7 +24,6 @@ fun DjiDeviceSettingsScreen(
     var rtmpUrl by remember { mutableStateOf(device.customRtmpUrl) }
     var resolution by remember { mutableStateOf(device.resolution) }
     var bitrate by remember { mutableStateOf(device.bitrate.toString()) }
-    var fps by remember { mutableStateOf(device.fps.toString()) }
     var imageStabilization by remember { mutableStateOf(device.imageStabilization) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
     var expandedResolution by remember { mutableStateOf(false) }
@@ -145,15 +144,6 @@ fun DjiDeviceSettingsScreen(
         Spacer(modifier = Modifier.height(8.dp))
         
         TextField(
-            value = fps,
-            onValueChange = { fps = it },
-            label = { Text("FPS") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        TextField(
             value = bitrate,
             onValueChange = { bitrate = it },
             label = { Text("Bitrate (bps)") },
@@ -224,7 +214,6 @@ fun DjiDeviceSettingsScreen(
                     device.wifiPassword = password
                     device.customRtmpUrl = rtmpUrl
                     device.resolution = resolution
-                    device.fps = fps.toIntOrNull() ?: 30
                     device.bitrate = bitrate.toIntOrNull() ?: 4_000_000
                     device.imageStabilization = imageStabilization
                     device.autoRestartStream = autoRestart
@@ -245,7 +234,6 @@ fun DjiDeviceSettingsScreen(
                         device.wifiPassword = password
                         device.customRtmpUrl = rtmpUrl
                         device.resolution = resolution
-                        device.fps = fps.toIntOrNull() ?: 30
                         device.bitrate = bitrate.toIntOrNull() ?: 4_000_000
                         device.imageStabilization = imageStabilization
                         device.autoRestartStream = autoRestart
