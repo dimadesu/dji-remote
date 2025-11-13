@@ -1,7 +1,10 @@
 package com.dimadesu.djiremote.dji
 
 import android.bluetooth.*
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -91,6 +94,10 @@ class DjiDevice(private val context: Context) {
     // timers (handler + runnable)
     private var startStreamingRunnable: Runnable? = null
     private var stopStreamingRunnable: Runnable? = null
+
+    // Bonding receiver
+    private var bondingReceiver: BroadcastReceiver? = null
+    private var pendingBondAddress: String? = null
 
     fun startLiveStream(
         address: String,
@@ -196,10 +203,84 @@ class DjiDevice(private val context: Context) {
         val device = adapter.getRemoteDevice(address)
         Log.d(TAG, "Got remote device, bond state: ${device.bondState}")
         
-        // Connect with TRANSPORT_LE explicitly for BLE devices
-        Log.d(TAG, "Calling connectGatt with TRANSPORT_LE...")
+        // NEW APPROACH: Skip OS-level bonding for DJI devices
+        // They use application-level pairing via the "mbln" message
+        when (device.bondState) {
+            BluetoothDevice.BOND_BONDED -> {
+                Log.d(TAG, "✓ Device is already bonded, connecting...")
+            }
+            else -> {
+                Log.d(TAG, "📱 Device not bonded, but DJI uses app-level pairing, connecting anyway...")
+            }
+        }
+        
+        // Connect directly without OS-level bonding
         bluetoothGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         setState(DjiDeviceState.CONNECTING)
+    }
+    
+    private fun sendPairingMessage() {
+        Log.d(TAG, "========== SENDING PAIRING MESSAGE ==========")
+        
+        val gatt = bluetoothGatt ?: return
+        
+        // Try reading from FFF4 first to check if there's pending data
+        mainHandler.post {
+            Log.d(TAG, "📖 Reading from FFF4 to check for pending responses...")
+            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
+            val fff4 = service?.getCharacteristic(FFF4_UUID)
+            if (fff4 != null && (fff4.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                val result = gatt.readCharacteristic(fff4)
+                Log.d(TAG, "  FFF4 read initiated: $result")
+            }
+        }
+        
+        // Send pairing message to FFF5 after a delay to allow read to complete
+        mainHandler.postDelayed({
+            Log.d(TAG, "Sending pairing message to FFF5...")
+            val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+            val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+            val bytes = msg.encode()
+            Log.d(TAG, "Pairing message (${bytes.size} bytes): ${bytes.joinToString(" ") { "%02X".format(it) }}")
+            enqueueWrite(bytes)
+        }, 500)
+        
+        // Also try FFF3 (command channel) with WRITE instead of WRITE_NO_RESPONSE
+        mainHandler.postDelayed({
+            Log.d(TAG, "Also sending pairing to FFF3 with WRITE...")
+            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
+            val fff3 = service?.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
+            if (fff3 != null) {
+                val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+                val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+                fff3.value = msg.encode()
+                fff3.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // With response
+                val result = gatt.writeCharacteristic(fff3)
+                Log.d(TAG, "FFF3 write result: $result")
+            }
+        }, 1000)
+        
+        // Try reading from FFF4 again after writes
+        mainHandler.postDelayed({
+            Log.d(TAG, "📖 Reading FFF4 after pairing writes...")
+            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
+            val fff4 = service?.getCharacteristic(FFF4_UUID)
+            if (fff4 != null) {
+                val result = gatt.readCharacteristic(fff4)
+                Log.d(TAG, "  FFF4 read result: $result")
+            }
+        }, 1500)
+        
+        // Poll FFF3 too
+        mainHandler.postDelayed({
+            Log.d(TAG, "📖 Reading FFF3...")
+            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
+            val fff3 = service?.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
+            if (fff3 != null && (fff3.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                val result = gatt.readCharacteristic(fff3)
+                Log.d(TAG, "  FFF3 read result: $result")
+            }
+        }, 2000)
     }
     
     private fun writeNextDescriptor() {
@@ -279,53 +360,33 @@ class DjiDevice(private val context: Context) {
                     }
                     Log.d(TAG, "FFF4 notifications enabled in CONNECTING state")
                     setState(DjiDeviceState.CHECKING_IF_PAIRED)
-                    
-                    // NEW STRATEGY: Try sending a query/status message first
-                    Log.d(TAG, "NEW STRATEGY: Sending initial query message...")
-                    
-                    // Send a simple query message with minimal payload
-                    mainHandler.postDelayed({
-                        Log.d(TAG, "Sending query message (target=0x0702, id=0x0001, type=0x000000)...")
-                        val queryMsg = DjiMessage(0x0702, 0x0001, 0x000000, byteArrayOf())
-                        enqueueWrite(queryMsg.encode())
-                    }, 100)
-                    
-                    // Try a different target
-                    mainHandler.postDelayed({
-                        Log.d(TAG, "Sending query with target 0x0802...")
-                        val queryMsg2 = DjiMessage(0x0802, 0x0001, 0x000000, byteArrayOf())
-                        enqueueWrite(queryMsg2.encode())
-                    }, 500)
-                    
-                    // Send the pairing message with a different payload hash
-                    mainHandler.postDelayed({
-                        Log.d(TAG, "Sending pairing with zeros hash...")
-                        // Try with all zeros hash (33 bytes of 0x00)
-                        val zeroHash = ByteArray(33) { 0x00 }
-                        val pinBytes = "mbln".toByteArray()
-                        val payload = zeroHash + byteArrayOf(pinBytes.size.toByte()) + pinBytes
-                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, payload)
-                        val bytes = msg.encode()
-                        Log.d(TAG, "  Zero hash message: ${bytes.joinToString(" ") { "%02X".format(it) }}")
-                        enqueueWrite(bytes)
-                    }, 1000)
-                    
-                    // Original pairing message as fallback
-                    mainHandler.postDelayed({
-                        Log.d(TAG, "Sending original pairing message...")
-                        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                        enqueueWrite(msg.encode())
-                    }, 1500)
+                    sendPairingMessage()
                     
                 } else if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
                 }
             } else {
-                Log.e(TAG, "Descriptor write failed with status $status")
-                // Try next one anyway
+                Log.e(TAG, "⚠️ Descriptor write failed with status $status")
+                
+                // Map error codes for debugging
+                val errorMsg = when (status) {
+                    0x05 -> "GATT_INSUFFICIENT_AUTHENTICATION"
+                    0x0F -> "GATT_INSUFFICIENT_ENCRYPTION"
+                    0x80 -> "GATT_NO_RESOURCES or GATT_INTERNAL_ERROR" 
+                    0x85 -> "GATT_ERROR"
+                    0x86 -> "GATT_NOT_SUPPORTED"
+                    else -> "Unknown error"
+                }
+                Log.e(TAG, "  Error details: $errorMsg")
+                
+                // Continue with next descriptor or trigger pairing anyway
                 if (!descriptorWriteQueue.isEmpty()) {
                     writeNextDescriptor()
+                } else if (state == DjiDeviceState.CONNECTING) {
+                    // All descriptors failed, try pairing anyway
+                    Log.w(TAG, "⚠️ All descriptor writes failed, attempting pairing anyway")
+                    setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                    sendPairingMessage()
                 }
             }
         }
@@ -404,11 +465,19 @@ class DjiDevice(private val context: Context) {
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val value = characteristic.value
-            Log.d(TAG, "onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
+            Log.d(TAG, "🔔 onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
             
             // CRITICAL: Log ANY data we receive, even single bytes
             if (value != null) {
-                Log.d(TAG, "  NOTIFICATION DATA (${value.size} bytes): ${value.joinToString(" ") { "%02X".format(it) }}")
+                Log.d(TAG, "  📦 NOTIFICATION DATA (${value.size} bytes): ${value.joinToString(" ") { "%02X".format(it) }}")
+                
+                // Log which characteristic sent this
+                when (characteristic.uuid) {
+                    UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb") -> Log.d(TAG, "  ✅ From FFF3 - RESPONSE RECEIVED!")
+                    FFF4_UUID -> Log.d(TAG, "  ✅ From FFF4 - RESPONSE RECEIVED!")
+                    FFF5_UUID -> Log.d(TAG, "  ✅ From FFF5 - RESPONSE RECEIVED!")
+                    else -> Log.d(TAG, "  From unknown characteristic")
+                }
                 
                 // Check different patterns
                 when {
@@ -480,24 +549,12 @@ class DjiDevice(private val context: Context) {
         
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             val value = characteristic.value
-            Log.d(TAG, "onCharacteristicRead: characteristic=${characteristic.uuid}, status=$status, bytes=${value?.size ?: 0}")
+            Log.d(TAG, "📖 onCharacteristicRead: characteristic=${characteristic.uuid}, status=$status, bytes=${value?.size ?: 0}")
             if (value != null && value.isNotEmpty()) {
                 Log.d(TAG, "  Read bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
-                // If this is from FFF4 and we're checking pairing, send pairing message now
-                if (characteristic.uuid == FFF4_UUID && state == DjiDeviceState.CHECKING_IF_PAIRED) {
-                    Log.d(TAG, "  FFF4 read complete, camera might be ready now")
-                    // Check if the read data looks like a DJI message
-                    if (value.size > 0 && value[0] == 0x55.toByte()) {
-                        Log.d(TAG, "  Looks like a DJI message! Trying to decode...")
-                        try {
-                            val message = DjiMessage.fromBytes(value)
-                            Log.d(TAG, "  Decoded: target=0x${message.target.toString(16)}, id=0x${message.id.toString(16)}, type=0x${message.type.toString(16)}")
-                            // Process it
-                            onCharacteristicChanged(gatt, characteristic)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "  Failed to decode: ${e.message}")
-                        }
-                    }
+                // Check if it's a DJI message
+                if (value.size > 0 && value[0] == 0x55.toByte()) {
+                    Log.d(TAG, "  ⚡ This looks like a DJI message in the read buffer!")
                 }
             } else {
                 Log.d(TAG, "  Read returned empty/null")
