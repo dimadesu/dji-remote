@@ -12,6 +12,10 @@ enum class SettingsDjiDeviceState {
 
 enum class SettingsDjiDeviceUrlType { SERVER, CUSTOM }
 
+enum class SettingsDjiDeviceImageStabilization {
+    OFF, ROCK_STEADY, ROCK_STEADY_PLUS, HORIZON_BALANCING, HORIZON_STEADY
+}
+
 data class SettingsDjiDevice(
     val id: UUID = UUID.randomUUID(),
     var name: String = "DJI Device",
@@ -27,8 +31,8 @@ data class SettingsDjiDevice(
     var customRtmpUrl: String = "",
     var resolution: String = "1080p",
     var fps: Int = 30,
-    var bitrate: Int = 4_000_000,
-    var imageStabilization: Boolean = false,
+    var bitrate: Int = 6_000_000,
+    var imageStabilization: SettingsDjiDeviceImageStabilization = SettingsDjiDeviceImageStabilization.OFF,
     var autoRestartStream: Boolean = false,
     var isStarted: Boolean = false,
     var state: SettingsDjiDeviceState = SettingsDjiDeviceState.IDLE

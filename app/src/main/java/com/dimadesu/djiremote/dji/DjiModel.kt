@@ -26,7 +26,7 @@ object DjiModel : DjiDeviceDelegate {
             "720p" -> SettingsDjiDeviceResolution.r720p
             else -> SettingsDjiDeviceResolution.r1080p
         }
-        val imageStab = if (settings.imageStabilization) SettingsDjiDeviceImageStabilization.rockSteady else SettingsDjiDeviceImageStabilization.off
+        val imageStab = settings.imageStabilization
         device.startLiveStream(
             address = address,
             wifiSsid = settings.wifiSsid,

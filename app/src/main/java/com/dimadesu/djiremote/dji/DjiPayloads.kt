@@ -20,8 +20,6 @@ fun djiPackUrl(url: String): ByteArray {
 
 enum class SettingsDjiDeviceResolution { r480p, r720p, r1080p }
 
-enum class SettingsDjiDeviceImageStabilization { off, rockSteady, rockSteadyPlus, horizonBalancing, horizonSteady }
-
 class DjiPairMessagePayload(private val pairPinCode: String) {
     companion object {
         val payload = byteArrayOf(
@@ -123,11 +121,11 @@ class DjiConfigureMessagePayload(private val imageStabilization: SettingsDjiDevi
 
     fun encode(): ByteArray {
         val imageStabilizationByte = when (imageStabilization) {
-            SettingsDjiDeviceImageStabilization.off -> 0
-            SettingsDjiDeviceImageStabilization.rockSteady -> 1
-            SettingsDjiDeviceImageStabilization.rockSteadyPlus -> 3
-            SettingsDjiDeviceImageStabilization.horizonBalancing -> 4
-            SettingsDjiDeviceImageStabilization.horizonSteady -> 2
+            SettingsDjiDeviceImageStabilization.OFF -> 0
+            SettingsDjiDeviceImageStabilization.ROCK_STEADY -> 1
+            SettingsDjiDeviceImageStabilization.ROCK_STEADY_PLUS -> 3
+            SettingsDjiDeviceImageStabilization.HORIZON_BALANCING -> 4
+            SettingsDjiDeviceImageStabilization.HORIZON_STEADY -> 2
         }
         val byte1 = if (oa5) 0x1A else 0x08
         val writer = ByteWriter()

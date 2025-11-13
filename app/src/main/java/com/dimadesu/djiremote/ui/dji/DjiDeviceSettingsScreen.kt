@@ -24,12 +24,7 @@ fun DjiDeviceSettingsScreen(
     var rtmpUrl by remember { mutableStateOf(device.customRtmpUrl) }
     var resolution by remember { mutableStateOf(device.resolution) }
     var bitrate by remember { mutableStateOf(device.bitrate) }
-    var imageStabilization by remember { mutableStateOf(
-        when {
-            !device.imageStabilization -> "Off"
-            else -> "RockSteady"
-        }
-    ) }
+    var imageStabilization by remember { mutableStateOf(device.imageStabilization) }
     var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
     var expandedResolution by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
@@ -47,6 +42,27 @@ fun DjiDeviceSettingsScreen(
         4_000_000,
         2_000_000
     )
+    
+    fun imageStabToString(value: com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization): String {
+        return when (value) {
+            com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.OFF -> "Off"
+            com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.ROCK_STEADY -> "RockSteady"
+            com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.ROCK_STEADY_PLUS -> "RockSteady+"
+            com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.HORIZON_BALANCING -> "HorizonBalancing"
+            com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.HORIZON_STEADY -> "HorizonSteady"
+        }
+    }
+    
+    fun stringToImageStab(value: String): com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization {
+        return when (value) {
+            "RockSteady" -> com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.ROCK_STEADY
+            "RockSteady+" -> com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.ROCK_STEADY_PLUS
+            "HorizonBalancing" -> com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.HORIZON_BALANCING
+            "HorizonSteady" -> com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.HORIZON_STEADY
+            else -> com.dimadesu.djiremote.dji.SettingsDjiDeviceImageStabilization.OFF
+        }
+    }
+    
     val imageStabOptions = listOf("Off", "RockSteady", "RockSteady+", "HorizonBalancing", "HorizonSteady")
     
     Column(
@@ -207,10 +223,10 @@ fun DjiDeviceSettingsScreen(
             onExpandedChange = { expandedImageStab = !expandedImageStab }
         ) {
             TextField(
-                value = imageStabilization,
+                value = imageStabToString(imageStabilization),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Image Stabilization") },
+                label = { Text("Image stabilization") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedImageStab) },
                 modifier = Modifier.fillMaxWidth().menuAnchor()
             )
@@ -222,7 +238,7 @@ fun DjiDeviceSettingsScreen(
                     DropdownMenuItem(
                         text = { Text(option) },
                         onClick = {
-                            imageStabilization = option
+                            imageStabilization = stringToImageStab(option)
                             expandedImageStab = false
                         }
                     )
@@ -290,7 +306,7 @@ fun DjiDeviceSettingsScreen(
                     device.customRtmpUrl = rtmpUrl
                     device.resolution = resolution
                     device.bitrate = bitrate
-                    device.imageStabilization = imageStabilization != "Off"
+                    device.imageStabilization = imageStabilization
                     device.autoRestartStream = autoRestart
                     DjiRepository.updateDevice(device)
                     
