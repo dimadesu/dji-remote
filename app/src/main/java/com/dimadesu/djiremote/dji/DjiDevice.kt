@@ -482,8 +482,10 @@ class DjiDevice(private val context: Context) {
                     for (c in service.characteristics) {
                         Log.d(TAG, "    Enabling notifications for: ${c.uuid}")
                         gatt.setCharacteristicNotification(c, true)
-                        // Queue descriptor write - but skip FFF4 for now
-                        if (c.uuid != FFF4_UUID) {
+                        
+                        // Skip FFF3 descriptor (it fails with GATT_NO_RESOURCES)
+                        // Only queue FFF4 and FFF5 descriptors
+                        if (c.uuid != FFF4_UUID && c.uuid.toString() != "0000fff3-0000-1000-8000-00805f9b34fb") {
                             val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                             if (descriptor != null) {
                                 descriptorWriteQueue.add(descriptor)
@@ -507,7 +509,14 @@ class DjiDevice(private val context: Context) {
             
             // Start writing descriptors, pairing will happen when FFF4 is enabled
             Log.d(TAG, "Starting descriptor writes (${descriptorWriteQueue.size} queued)...")
-            writeNextDescriptor()
+            if (descriptorWriteQueue.isEmpty()) {
+                // If no descriptors to write, go straight to pairing
+                Log.d(TAG, "No descriptors to write, going to pairing")
+                setState(DjiDeviceState.CHECKING_IF_PAIRED)
+                sendPairingMessage()
+            } else {
+                writeNextDescriptor()
+            }
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
