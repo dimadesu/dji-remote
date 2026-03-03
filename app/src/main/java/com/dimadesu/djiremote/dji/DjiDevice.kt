@@ -64,7 +64,6 @@ class DjiDevice(private val context: Context) {
     private var bluetoothGatt: BluetoothGatt? = null
     private var fff5Characteristic: BluetoothGattCharacteristic? = null
     private var fff4Characteristic: BluetoothGattCharacteristic? = null
-    private var fff3Characteristic: BluetoothGattCharacteristic? = null  // Add FFF3 reference
     private val mainHandler = Handler(Looper.getMainLooper())
     // Write queue
     private val writeChunkSize = 20 // Fixed 20-byte chunks like working Android reference
@@ -358,11 +357,7 @@ class DjiDevice(private val context: Context) {
                     Log.d(TAG, "Found DJI characteristics in service ${service.uuid}!")
                     
                     if (fff3 != null) {
-                        Log.d(TAG, "  Found FFF3 characteristic!")
-                        val properties = fff3.properties
-                        Log.d(TAG, "  FFF3 properties: 0x${properties.toString(16)}")
-                        Log.d(TAG, "    INDICATE: ${(properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0}")
-                        fff3Characteristic = fff3
+                        Log.d(TAG, "  Found FFF3 characteristic")
                     }
                     
                     if (fff5 != null) {
@@ -479,20 +474,6 @@ class DjiDevice(private val context: Context) {
 
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             Log.d(TAG, "onCharacteristicWrite: characteristic=${characteristic.uuid}, status=$status")
-        }
-        
-        override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
-            val value = characteristic.value
-            Log.d(TAG, "📖 onCharacteristicRead: characteristic=${characteristic.uuid}, status=$status, bytes=${value?.size ?: 0}")
-            if (value != null && value.isNotEmpty()) {
-                Log.d(TAG, "  Read bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
-                // Check if it's a DJI message
-                if (value.size > 0 && value[0] == 0x55.toByte()) {
-                    Log.d(TAG, "  ⚡ This looks like a DJI message in the read buffer!")
-                }
-            } else {
-                Log.d(TAG, "  Read returned empty/null")
-            }
         }
     }
 
