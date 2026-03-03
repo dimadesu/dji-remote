@@ -72,6 +72,9 @@ class DjiDevice(private val context: Context) {
     private var isWriting: Boolean = false
     private val writeIntervalMs: Long = 30L // pacing between writes for NO_RESPONSE
     
+    // RX reassembly buffer for multi-chunk message reassembly
+    private var rxBuffer = ByteArray(0)
+    
     // Descriptor write queue
     private val descriptorWriteQueue: ArrayDeque<BluetoothGattDescriptor> = ArrayDeque()
     private var isWritingDescriptor: Boolean = false
@@ -151,6 +154,7 @@ class DjiDevice(private val context: Context) {
         bluetoothGatt = null
         fff5Characteristic = null
         batteryPercentage = null
+        rxBuffer = ByteArray(0)
         setState(DjiDeviceState.IDLE)
     }
 
@@ -429,80 +433,46 @@ class DjiDevice(private val context: Context) {
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
             val value = characteristic.value
-            Log.d(TAG, "🔔 onCharacteristicChanged: characteristic=${characteristic.uuid}, bytes=${value?.size ?: 0}, state=$state")
+            if (value == null || value.isEmpty()) return
             
-            // CRITICAL: Log ANY data we receive, even single bytes
-            if (value != null) {
-                Log.d(TAG, "  📦 NOTIFICATION DATA (${value.size} bytes): ${value.joinToString(" ") { "%02X".format(it) }}")
-                
-                // Log which characteristic sent this
-                when (characteristic.uuid) {
-                    UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb") -> Log.d(TAG, "  ✅ From FFF3 - RESPONSE RECEIVED!")
-                    FFF4_UUID -> Log.d(TAG, "  ✅ From FFF4 - RESPONSE RECEIVED!")
-                    FFF5_UUID -> Log.d(TAG, "  ✅ From FFF5 - RESPONSE RECEIVED!")
-                    else -> Log.d(TAG, "  From unknown characteristic")
+            Log.d(TAG, "RX: ${characteristic.uuid}, ${value.size} bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
+            
+            // Skip continuation chunks that don't start with 0x55 (they're appended via rxBuffer)
+            if (value[0] != 0x55.toByte()) return
+            
+            // Append to reassembly buffer
+            rxBuffer += value
+            
+            // Try to extract complete DJI messages from the buffer
+            while (rxBuffer.size >= 2) {
+                if (rxBuffer[0] != 0x55.toByte()) {
+                    // Skip garbage byte
+                    rxBuffer = rxBuffer.copyOfRange(1, rxBuffer.size)
+                    continue
                 }
                 
-                // Check different patterns
-                when {
-                    value.size > 0 && value[0] == 0x55.toByte() -> {
-                        Log.d(TAG, "  ✓ DJI message detected (starts with 0x55)")
-                    }
-                    value.size == 1 -> {
-                        Log.d(TAG, "  Single byte response: 0x${"%02X".format(value[0])}")
-                    }
-                    value.size == 2 -> {
-                        Log.d(TAG, "  Two byte response: 0x${"%02X".format(value[0])}${"%02X".format(value[1])}")
-                    }
-                    value.all { it in 32..126 } -> {
-                        Log.d(TAG, "  ASCII text: ${String(value)}")
-                    }
-                    else -> {
-                        Log.d(TAG, "  Unknown format")
-                    }
+                val messageLength = rxBuffer[1].toInt() and 0xFF
+                if (messageLength < 11) {
+                    // Invalid length, skip this byte
+                    rxBuffer = rxBuffer.copyOfRange(1, rxBuffer.size)
+                    continue
                 }
-            }
-            
-            if (value == null || value.isEmpty()) {
-                Log.d(TAG, "  Empty notification received")
-                return
-            }
-            
-            // Try to parse as DJI message if it starts with 0x55
-            if (value.size > 0 && value[0] == 0x55.toByte()) {
+                
+                if (rxBuffer.size < messageLength) {
+                    // Incomplete message, wait for more data
+                    Log.d(TAG, "RX: Fragment ${rxBuffer.size}/$messageLength bytes, waiting...")
+                    break
+                }
+                
+                val completeMessage = rxBuffer.copyOfRange(0, messageLength)
+                rxBuffer = rxBuffer.copyOfRange(messageLength, rxBuffer.size)
+                
                 try {
-                    val message = DjiMessage.fromBytes(value)
-                    Log.d(TAG, "  Successfully decoded DJI message!")
-                    Log.d(TAG, "    Target: 0x${message.target.toString(16)}")
-                    Log.d(TAG, "    Type: 0x${message.type.toString(16)}")
-                    Log.d(TAG, "    ID: 0x${message.id.toString(16)}")
-                    Log.d(TAG, "    Payload (${message.payload.size} bytes): ${message.payload.take(20).joinToString(" ") { "%02X".format(it) }}${if(message.payload.size > 20) "..." else ""}")
-                    
-                    // Process message based on state
-                    when (state) {
-                        DjiDeviceState.CHECKING_IF_PAIRED -> {
-                            Log.d(TAG, "  Processing in CHECKING_IF_PAIRED state")
-                            processCheckingIfPaired(message)
-                        }
-                        DjiDeviceState.PAIRING -> processPairing()
-                        DjiDeviceState.CLEANING_UP -> processCleaningUp(message)
-                        DjiDeviceState.PREPARING_STREAM -> processPreparingStream(message)
-                        DjiDeviceState.SETTING_UP_WIFI -> processSettingUpWifi(message)
-                        DjiDeviceState.CONFIGURING -> processConfiguring(message)
-                        DjiDeviceState.STARTING_STREAM -> processStartingStream(message)
-                        DjiDeviceState.STREAMING -> processStreaming(message)
-                        DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
-                        else -> {
-                            Log.d(TAG, "  Unexpected message in state $state - processing anyway")
-                            // Try processing as pairing response anyway
-                            if (message.id == PAIR_TRANSACTION_ID) {
-                                Log.d(TAG, "  This looks like a pairing response!")
-                                processCheckingIfPaired(message)
-                            }
-                        }
-                    }
+                    val message = DjiMessage.fromBytes(completeMessage)
+                    Log.d(TAG, "RX decoded: target=0x${message.target.toString(16)}, id=0x${message.id.toString(16)}, type=0x${message.type.toString(16)}")
+                    handleDecodedMessage(message)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to decode as DJI message: ${e.message}")
+                    Log.e(TAG, "RX: Corrupt message discarded: ${e.message}")
                 }
             }
         }
@@ -522,6 +492,24 @@ class DjiDevice(private val context: Context) {
                 }
             } else {
                 Log.d(TAG, "  Read returned empty/null")
+            }
+        }
+    }
+
+    private fun handleDecodedMessage(message: DjiMessage) {
+        Log.d(TAG, "handleDecodedMessage: state=$state, id=0x${message.id.toString(16)}")
+        when (state) {
+            DjiDeviceState.CHECKING_IF_PAIRED -> processCheckingIfPaired(message)
+            DjiDeviceState.PAIRING -> processPairing()
+            DjiDeviceState.CLEANING_UP -> processCleaningUp(message)
+            DjiDeviceState.PREPARING_STREAM -> processPreparingStream(message)
+            DjiDeviceState.SETTING_UP_WIFI -> processSettingUpWifi(message)
+            DjiDeviceState.CONFIGURING -> processConfiguring(message)
+            DjiDeviceState.STARTING_STREAM -> processStartingStream(message)
+            DjiDeviceState.STREAMING -> processStreaming(message)
+            DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
+            else -> {
+                Log.d(TAG, "Message in state $state ignored")
             }
         }
     }
