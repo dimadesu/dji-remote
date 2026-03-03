@@ -66,9 +66,8 @@ class DjiDevice(private val context: Context) {
     private var fff4Characteristic: BluetoothGattCharacteristic? = null
     private var fff3Characteristic: BluetoothGattCharacteristic? = null  // Add FFF3 reference
     private val mainHandler = Handler(Looper.getMainLooper())
-    // MTU and write queue
-    private var negotiatedMtu: Int = 23
-    private val writePayloadOverhead = 3 // ATT header
+    // Write queue
+    private val writeChunkSize = 20 // Fixed 20-byte chunks like working Android reference
     private val writeQueue: ArrayDeque<ByteArray> = ArrayDeque()
     private var isWriting: Boolean = false
     private val writeIntervalMs: Long = 30L // pacing between writes for NO_RESPONSE
@@ -274,7 +273,7 @@ class DjiDevice(private val context: Context) {
                 Log.d(TAG, "Connected! Requesting MTU...")
                 // request a large MTU (max 517) then discover services; MTU change is async
                 try {
-                    gatt.requestMtu(517)
+                    gatt.requestMtu(128)
                 } catch (e: Exception) {
                     Log.w(TAG, "MTU request failed, discovering services anyway")
                     gatt.discoverServices()
@@ -287,9 +286,6 @@ class DjiDevice(private val context: Context) {
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             Log.d(TAG, "onMtuChanged: mtu=$mtu, status=$status")
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                negotiatedMtu = mtu
-            }
             // Now discover services after MTU is set
             Log.d(TAG, "MTU negotiated, discovering services...")
             gatt.discoverServices()
@@ -540,18 +536,17 @@ class DjiDevice(private val context: Context) {
     }
 
     private fun enqueueWrite(value: ByteArray) {
-        // Split into chunks of (negotiatedMtu - overhead)
-        val payloadSize = maxOf(1, negotiatedMtu - writePayloadOverhead)
+        // Split into fixed 20-byte chunks (matching working Android reference)
         var offset = 0
         var chunkCount = 0
         while (offset < value.size) {
-            val end = minOf(offset + payloadSize, value.size)
+            val end = minOf(offset + writeChunkSize, value.size)
             val chunk = value.copyOfRange(offset, end)
             writeQueue.addLast(chunk)
             chunkCount++
             offset = end
         }
-        Log.d(TAG, "  Enqueued $chunkCount chunks (payloadSize=$payloadSize)")
+        Log.d(TAG, "  Enqueued $chunkCount chunks (chunkSize=$writeChunkSize)")
         startWriteLoopIfNeeded()
     }
 
