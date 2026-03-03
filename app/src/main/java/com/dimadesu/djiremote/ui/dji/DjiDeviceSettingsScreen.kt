@@ -30,7 +30,7 @@ fun DjiDeviceSettingsScreen(
     var resolution by remember { mutableStateOf(liveDevice.resolution) }
     var bitrate by remember { mutableStateOf(liveDevice.bitrate) }
     var imageStabilization by remember { mutableStateOf(liveDevice.imageStabilization) }
-    var autoRestart by remember { mutableStateOf(liveDevice.autoRestartStream) }
+
     var expandedResolution by remember { mutableStateOf(false) }
     var expandedModel by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
@@ -294,19 +294,6 @@ fun DjiDeviceSettingsScreen(
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
         
-        // Auto-restart section (no header, just toggle)
-        Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Auto-restart live stream when broken", modifier = Modifier.weight(1f))
-            Switch(checked = autoRestart, onCheckedChange = { autoRestart = it })
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        Divider()
-        Spacer(modifier = Modifier.height(16.dp))
-        
         // Status section (no header in Moblin, just centered text)
         Box(
             modifier = Modifier.fillMaxWidth(),
@@ -345,7 +332,6 @@ fun DjiDeviceSettingsScreen(
                     liveDevice.resolution = resolution
                     liveDevice.bitrate = bitrate
                     liveDevice.imageStabilization = imageStabilization
-                    liveDevice.autoRestartStream = autoRestart
                     DjiRepository.updateDevice(liveDevice)
                     
                     com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, liveDevice)

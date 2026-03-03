@@ -13,9 +13,6 @@ private const val TAG = "DjiModel"
 object DjiModel : DjiDeviceDelegate {
     private val devices = mutableMapOf<String, DjiDevice>()
     private val scope: CoroutineScope = MainScope()
-    private val restartHandlers = mutableMapOf<String, android.os.Handler>()
-    private val restartRunnables = mutableMapOf<String, Runnable>()
-    private val restartDelayMs: Long = 5_000 // default auto-restart delay
     private val contextsByAddress = mutableMapOf<String, Context>()
 
     fun startStreaming(context: Context, settings: SettingsDjiDevice) {
@@ -106,53 +103,14 @@ object DjiModel : DjiDeviceDelegate {
             // Build updated copy — never mutate the object already in the list
             var updated = existing.copy(state = newState)
 
-            // Auto-restart logic: if device went to IDLE or WIFI_SETUP_FAILED and the
-            // settings indicate autoRestartStream and isStarted (user-initiated), schedule a restart.
             when (state) {
                 DjiDeviceState.IDLE, DjiDeviceState.WIFI_SETUP_FAILED -> {
-                    if (existing.autoRestartStream && existing.isStarted) {
-                        updated = updated.copy(isStarted = false)
-                        DjiRepository.updateDevice(updated)
-                        scheduleRestartForAddress(existing.bluetoothPeripheralAddress, updated)
-                    } else {
-                        updated = updated.copy(isStarted = false)
-                        DjiRepository.updateDevice(updated)
-                    }
+                    updated = updated.copy(isStarted = false)
                 }
-                DjiDeviceState.STREAMING -> {
-                    cancelScheduledRestart(existing.bluetoothPeripheralAddress)
-                    DjiRepository.updateDevice(updated)
-                }
-                else -> {
-                    DjiRepository.updateDevice(updated)
-                }
+                else -> {}
             }
+            DjiRepository.updateDevice(updated)
         }
     }
 
-    private fun scheduleRestartForAddress(address: String?, settings: SettingsDjiDevice) {
-        if (address == null) return
-        cancelScheduledRestart(address)
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        val runnable = Runnable {
-            // Re-start if still marked started
-            val current = DjiRepository.devices.value.firstOrNull { it.bluetoothPeripheralAddress == address } ?: return@Runnable
-            if (!current.isStarted) return@Runnable
-            // call startStreaming using the stored context
-            val ctx = contextsByAddress[address] ?: return@Runnable
-            startStreaming(ctx, current)
-        }
-        restartHandlers[address] = handler
-        restartRunnables[address] = runnable
-        handler.postDelayed(runnable, restartDelayMs)
-    }
-
-    private fun cancelScheduledRestart(address: String?) {
-        if (address == null) return
-        val handler = restartHandlers.remove(address)
-        val runnable = restartRunnables.remove(address)
-        if (handler != null && runnable != null) {
-            handler.removeCallbacks(runnable)
-        }
-    }
 }
