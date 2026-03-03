@@ -92,12 +92,16 @@ object DjiModel : DjiDeviceDelegate {
                 DjiDeviceState.IDLE -> SettingsDjiDeviceState.IDLE
                 DjiDeviceState.DISCOVERING -> SettingsDjiDeviceState.DISCOVERING
                 DjiDeviceState.CONNECTING -> SettingsDjiDeviceState.CONNECTING
+                DjiDeviceState.CHECKING_IF_PAIRED -> SettingsDjiDeviceState.PAIRING
                 DjiDeviceState.PAIRING -> SettingsDjiDeviceState.PAIRING
+                DjiDeviceState.CLEANING_UP -> SettingsDjiDeviceState.STOPPING_STREAM
+                DjiDeviceState.STOPPING_STREAM -> SettingsDjiDeviceState.STOPPING_STREAM
                 DjiDeviceState.PREPARING_STREAM -> SettingsDjiDeviceState.PREPARING_STREAM
+                DjiDeviceState.SETTING_UP_WIFI -> SettingsDjiDeviceState.SETTING_UP_WIFI
+                DjiDeviceState.WIFI_SETUP_FAILED -> SettingsDjiDeviceState.WIFI_SETUP_FAILED
+                DjiDeviceState.CONFIGURING -> SettingsDjiDeviceState.CONFIGURING
                 DjiDeviceState.STARTING_STREAM -> SettingsDjiDeviceState.STARTING_STREAM
                 DjiDeviceState.STREAMING -> SettingsDjiDeviceState.STREAMING
-                DjiDeviceState.WIFI_SETUP_FAILED -> SettingsDjiDeviceState.WIFI_SETUP_FAILED
-                else -> SettingsDjiDeviceState.UNKNOWN
             }
             
             // Build updated copy — never mutate the object already in the list

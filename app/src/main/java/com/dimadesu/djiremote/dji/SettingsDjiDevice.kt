@@ -13,8 +13,8 @@ enum class SettingsDjiDeviceModel {
     OSMO_360;
 
     fun hasImageStabilization(): Boolean = when (this) {
-        OSMO_ACTION_4, OSMO_ACTION_5_PRO, OSMO_ACTION_6, OSMO_360 -> true
-        else -> false
+        OSMO_ACTION_2, OSMO_ACTION_3, OSMO_POCKET_3 -> false
+        else -> true // Show for UNKNOWN too — safe default
     }
 
     fun hasNewProtocol(): Boolean = when (this) {
@@ -24,7 +24,8 @@ enum class SettingsDjiDeviceModel {
 }
 
 enum class SettingsDjiDeviceState {
-    IDLE, DISCOVERING, CONNECTING, PAIRING, PREPARING_STREAM, STARTING_STREAM, STREAMING, WIFI_SETUP_FAILED, UNKNOWN
+    IDLE, DISCOVERING, CONNECTING, PAIRING, STOPPING_STREAM, PREPARING_STREAM,
+    SETTING_UP_WIFI, WIFI_SETUP_FAILED, CONFIGURING, STARTING_STREAM, STREAMING, UNKNOWN
 }
 
 enum class SettingsDjiDeviceImageStabilization {

@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dimadesu.djiremote.dji.DjiRepository
 import com.dimadesu.djiremote.dji.SettingsDjiDevice
@@ -33,9 +34,10 @@ fun DjiDeviceSettingsScreen(
     var expandedResolution by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
     var expandedImageStab by remember { mutableStateOf(false) }
+    var expandedFps by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
-    val resolutionOptions = listOf("480p", "720p", "1080p")
+    val resolutionOptions = listOf("1080p", "720p", "480p")
     val bitrateOptions = listOf(
         20_000_000,
         16_000_000,
@@ -80,7 +82,8 @@ fun DjiDeviceSettingsScreen(
             value = name,
             onValueChange = { name = it },
             label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !liveDevice.isStarted
         )
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -92,7 +95,8 @@ fun DjiDeviceSettingsScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Button(
             onClick = onOpenScanner,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !liveDevice.isStarted
         ) {
             Text(liveDevice.bluetoothPeripheralName ?: "Select device")
         }
@@ -116,7 +120,8 @@ fun DjiDeviceSettingsScreen(
             value = ssid,
             onValueChange = { ssid = it },
             label = { Text("SSID") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !liveDevice.isStarted
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -125,7 +130,9 @@ fun DjiDeviceSettingsScreen(
             value = password,
             onValueChange = { password = it },
             label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !liveDevice.isStarted,
+            visualTransformation = PasswordVisualTransformation()
         )
         
         Spacer(modifier = Modifier.height(4.dp))
@@ -148,7 +155,8 @@ fun DjiDeviceSettingsScreen(
             onValueChange = { rtmpUrl = it },
             label = { Text("URL") },
             placeholder = { Text("rtmp://server/live/stream") },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !liveDevice.isStarted
         )
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -170,7 +178,8 @@ fun DjiDeviceSettingsScreen(
                 readOnly = true,
                 label = { Text("Resolution") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedResolution) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedResolution,
@@ -196,12 +205,13 @@ fun DjiDeviceSettingsScreen(
             onExpandedChange = { expandedBitrate = !expandedBitrate }
         ) {
             TextField(
-                value = "${bitrate / 1_000_000} Mbps (${bitrate} bps)",
+                value = "${bitrate / 1_000_000} Mbps",
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Bitrate") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBitrate) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedBitrate,
@@ -232,7 +242,8 @@ fun DjiDeviceSettingsScreen(
                 readOnly = true,
                 label = { Text("Image stabilization") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedImageStab) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedImageStab,
@@ -250,6 +261,41 @@ fun DjiDeviceSettingsScreen(
             }
         }
         } // end if hasImageStabilization
+        
+        // FPS picker (only for Osmo Pocket 3, matching Moblin)
+        if (liveDevice.model == com.dimadesu.djiremote.dji.SettingsDjiDeviceModel.OSMO_POCKET_3) {
+            val fpsOptions = listOf(25, 30)
+            var fps by remember { mutableStateOf(liveDevice.fps) }
+            Spacer(modifier = Modifier.height(8.dp))
+            ExposedDropdownMenuBox(
+                expanded = expandedFps,
+                onExpandedChange = { expandedFps = !expandedFps }
+            ) {
+                TextField(
+                    value = "$fps",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("FPS") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedFps) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                    enabled = !liveDevice.isStarted
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedFps,
+                    onDismissRequest = { expandedFps = false }
+                ) {
+                    fpsOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text("$option") },
+                            onClick = {
+                                fps = option
+                                expandedFps = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
         
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -273,10 +319,13 @@ fun DjiDeviceSettingsScreen(
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.DISCOVERING -> "Discovering"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.CONNECTING -> "Connecting"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.PAIRING -> "Pairing"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STOPPING_STREAM -> "Stopping stream"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.PREPARING_STREAM -> "Preparing to stream"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.SETTING_UP_WIFI -> "Setting up WiFi"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.WIFI_SETUP_FAILED -> "WiFi setup failed"
+                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.CONFIGURING -> "Configuring"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STARTING_STREAM -> "Starting stream"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.STREAMING -> "Streaming"
-                    com.dimadesu.djiremote.dji.SettingsDjiDeviceState.WIFI_SETUP_FAILED -> "WiFi setup failed"
                     else -> "Unknown"
                 },
                 style = MaterialTheme.typography.bodyMedium
