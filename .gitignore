@@ -9,5 +9,6 @@
 .cxx
 local.properties
 keystore.properties
+/app/release
 
 /inspiration/
