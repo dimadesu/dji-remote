@@ -178,7 +178,8 @@ fun DjiDeviceSettingsScreen(
                 readOnly = true,
                 label = { Text("Resolution") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedResolution) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedResolution,
@@ -209,7 +210,8 @@ fun DjiDeviceSettingsScreen(
                 readOnly = true,
                 label = { Text("Bitrate") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBitrate) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedBitrate,
@@ -240,7 +242,8 @@ fun DjiDeviceSettingsScreen(
                 readOnly = true,
                 label = { Text("Image stabilization") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedImageStab) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
+                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                enabled = !liveDevice.isStarted
             )
             ExposedDropdownMenu(
                 expanded = expandedImageStab,
