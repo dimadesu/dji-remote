@@ -3,7 +3,24 @@ package com.dimadesu.djiremote.dji
 import java.util.UUID
 
 enum class SettingsDjiDeviceModel {
-    UNKNOWN, OSMO_ACTION_4, OSMO_ACTION_5_PRO, OSMO_POCKET_3
+    UNKNOWN,
+    OSMO_ACTION_2,
+    OSMO_ACTION_3,
+    OSMO_ACTION_4,
+    OSMO_ACTION_5_PRO,
+    OSMO_ACTION_6,
+    OSMO_POCKET_3,
+    OSMO_360;
+
+    fun hasImageStabilization(): Boolean = when (this) {
+        OSMO_ACTION_4, OSMO_ACTION_5_PRO, OSMO_ACTION_6, OSMO_360 -> true
+        else -> false
+    }
+
+    fun hasNewProtocol(): Boolean = when (this) {
+        OSMO_ACTION_5_PRO, OSMO_ACTION_6, OSMO_360 -> true
+        else -> false
+    }
 }
 
 enum class SettingsDjiDeviceState {
