@@ -71,6 +71,20 @@ fun DjiDeviceSettingsScreen(
     
     val imageStabOptions = listOf("Off", "RockSteady", "RockSteady+", "HorizonBalancing", "HorizonSteady")
     
+    // Save config to repository whenever user leaves the screen
+    DisposableEffect(Unit) {
+        onDispose {
+            liveDevice.name = name
+            liveDevice.wifiSsid = ssid
+            liveDevice.wifiPassword = password
+            liveDevice.rtmpUrl = rtmpUrl
+            liveDevice.resolution = resolution
+            liveDevice.bitrate = bitrate
+            liveDevice.imageStabilization = imageStabilization
+            DjiRepository.updateDevice(liveDevice)
+        }
+    }
+    
     Column(
         modifier = Modifier
             .fillMaxSize()
