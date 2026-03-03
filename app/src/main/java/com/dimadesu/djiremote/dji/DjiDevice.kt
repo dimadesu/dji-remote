@@ -323,27 +323,17 @@ class DjiDevice(private val context: Context) {
         Log.d(TAG, "Writing descriptor ${descriptor.characteristic.uuid}...")
         isWritingDescriptor = true
         
-        // FFF3 uses INDICATE, FFF4 and FFF5 use NOTIFY
-        val descriptorValue = if (descriptor.characteristic.uuid.toString() == "0000fff3-0000-1000-8000-00805f9b34fb") {
-            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE  // 0x02 00 for FFF3
-        } else {
-            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE // 0x01 00 for FFF4/FFF5
-        }
-        
-        val valueStr = if (descriptorValue.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
-            "0x0200 (INDICATE)"
-        } else {
-            "0x0100 (NOTIFY)"
-        }
+        // Use NOTIFY (0x0100) for ALL characteristics - DJI camera doesn't support INDICATE on Android
+        val descriptorValue = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE // 0x01 00
         
         // Use new API for Android 13+ (API 33+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             val result = gatt.writeDescriptor(descriptor, descriptorValue)
-            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=$valueStr")
+            Log.d(TAG, "  Descriptor write initiated (new API): result=$result, value=0x0100 (NOTIFY)")
         } else {
             descriptor.value = descriptorValue
             val result = gatt.writeDescriptor(descriptor)
-            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=$valueStr")
+            Log.d(TAG, "  Descriptor write initiated (old API): result=$result, value=0x0100 (NOTIFY)")
         }
     }
 
@@ -478,14 +468,13 @@ class DjiDevice(private val context: Context) {
                     // Queue descriptor writes: FFF4 must be last (triggers pairing when enabled)
                     val fff4Descriptor = fff4?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                     
-                    // Enable notifications on all characteristics
+                    // Enable notifications on all characteristics (including FFF3 - use NOTIFY, not INDICATE)
                     for (c in service.characteristics) {
                         Log.d(TAG, "    Enabling notifications for: ${c.uuid}")
                         gatt.setCharacteristicNotification(c, true)
                         
-                        // Skip FFF3 descriptor (it fails with GATT_NO_RESOURCES)
-                        // Only queue FFF4 and FFF5 descriptors
-                        if (c.uuid != FFF4_UUID && c.uuid.toString() != "0000fff3-0000-1000-8000-00805f9b34fb") {
+                        // Queue all descriptors except FFF4 (added last to trigger pairing)
+                        if (c.uuid != FFF4_UUID) {
                             val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                             if (descriptor != null) {
                                 descriptorWriteQueue.add(descriptor)
