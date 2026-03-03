@@ -68,11 +68,9 @@ object DjiModel : DjiDeviceDelegate {
             model = model
         )
         Log.d(TAG, "DjiDevice.startLiveStream() called")
-        // update repository state
+        // update repository state — use copy() so StateFlow sees a new object
         scope.launch(Dispatchers.Main) {
-            settings.isStarted = true
-            settings.state = SettingsDjiDeviceState.PREPARING_STREAM
-            DjiRepository.updateDevice(settings)
+            DjiRepository.updateDevice(settings.copy(isStarted = true, state = SettingsDjiDeviceState.PREPARING_STREAM))
         }
     }
 
@@ -81,9 +79,7 @@ object DjiModel : DjiDeviceDelegate {
         val device = devices[address] ?: return
         device.stopLiveStream()
         scope.launch(Dispatchers.Main) {
-            settings.isStarted = false
-            settings.state = SettingsDjiDeviceState.IDLE
-            DjiRepository.updateDevice(settings)
+            DjiRepository.updateDevice(settings.copy(isStarted = false, state = SettingsDjiDeviceState.IDLE))
         }
     }
 
@@ -107,27 +103,28 @@ object DjiModel : DjiDeviceDelegate {
                 else -> SettingsDjiDeviceState.UNKNOWN
             }
             
-            // Update device state (isStarted is transient, will reset to false on reload)
-            existing.state = newState
-            DjiRepository.updateDevice(existing)
+            // Build updated copy — never mutate the object already in the list
+            var updated = existing.copy(state = newState)
 
             // Auto-restart logic: if device went to IDLE or WIFI_SETUP_FAILED and the
             // settings indicate autoRestartStream and isStarted (user-initiated), schedule a restart.
             when (state) {
                 DjiDeviceState.IDLE, DjiDeviceState.WIFI_SETUP_FAILED -> {
                     if (existing.autoRestartStream && existing.isStarted) {
-                        // Clear isStarted when going to IDLE
-                        existing.isStarted = false
-                        scheduleRestartForAddress(existing.bluetoothPeripheralAddress, existing)
+                        updated = updated.copy(isStarted = false)
+                        DjiRepository.updateDevice(updated)
+                        scheduleRestartForAddress(existing.bluetoothPeripheralAddress, updated)
                     } else {
-                        existing.isStarted = false
+                        updated = updated.copy(isStarted = false)
+                        DjiRepository.updateDevice(updated)
                     }
                 }
                 DjiDeviceState.STREAMING -> {
-                    // cancel any pending restart when streaming
                     cancelScheduledRestart(existing.bluetoothPeripheralAddress)
+                    DjiRepository.updateDevice(updated)
                 }
                 else -> {
+                    DjiRepository.updateDevice(updated)
                 }
             }
         }
