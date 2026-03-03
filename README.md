@@ -51,3 +51,9 @@ Open [GitHub releases page](https://github.com/dimadesu/dji-remote/releases) on 
 - [Bond Bunny](https://github.com/dimadesu/bond-bunny) - Android SRTLA bonding app. Add SRTLA bonding to any SRT stream.
 - [MediaSrvr](https://github.com/dimadesu/MediaSrvr) - run RTMP media server as Android app.
 - [ScreenStreamerGo](https://github.com/dimadesu/ScreenStreamerGo) - free app to stream Android device screen over SRT/RTMP (in early stages of development).
+
+## Special thanks
+
+Special thanks goes to [Spillmaker](https://github.com/Spillmaker) who has done the hard work of reverse-engineering the DJI Bluetooth commands.
+
+He is continuing the work on the project [here](https://github.com/Spillmaker/DJILib.swift), building a Swift library for this.
