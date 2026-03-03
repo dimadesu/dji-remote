@@ -637,24 +637,14 @@ class DjiDevice(private val context: Context) {
             setState(DjiDeviceState.WIFI_SETUP_FAILED)
             return
         }
-        when (model) {
-            SettingsDjiDeviceModel.OSMO_ACTION_4 -> {
-                val imageStab = imageStabilization ?: return
-                val payload = DjiConfigureMessagePayload(imageStab, false).encode()
-                val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
-                writeMessage(message)
-                setState(DjiDeviceState.CONFIGURING)
-            }
-            SettingsDjiDeviceModel.OSMO_ACTION_5_PRO -> {
-                val imageStab = imageStabilization ?: return
-                val payload = DjiConfigureMessagePayload(imageStab, true).encode()
-                val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
-                writeMessage(message)
-                setState(DjiDeviceState.CONFIGURING)
-            }
-            else -> {
-                sendStartStreaming()
-            }
+        if (model.hasImageStabilization()) {
+            val imageStab = imageStabilization ?: return
+            val payload = DjiConfigureMessagePayload(imageStab, model.hasNewProtocol()).encode()
+            val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
+            writeMessage(message)
+            setState(DjiDeviceState.CONFIGURING)
+        } else {
+            sendStartStreaming()
         }
     }
 
@@ -666,12 +656,12 @@ class DjiDevice(private val context: Context) {
     private fun sendStartStreaming() {
         val rtmp = rtmpUrl ?: return
         val res = resolution ?: return
-        val oa5 = model == SettingsDjiDeviceModel.OSMO_ACTION_5_PRO
+        val oa5 = model.hasNewProtocol()
         val payload = DjiStartStreamingMessagePayload(rtmp, res, fps, bitrateKbps, oa5).encode()
         val message = DjiMessage(START_STREAMING_TARGET, START_STREAMING_TRANSACTION_ID, START_STREAMING_TYPE, payload)
         writeMessage(message)
 
-        // OA5P patch: send confirm payload
+        // New protocol devices (OA5P, OA6, 360): send confirm-start payload
         if (oa5) {
             val confirmPayload = DjiConfirmStartStreamingMessagePayload().encode()
             val confirmMsg = DjiMessage(STOP_STREAMING_TARGET, STOP_STREAMING_TRANSACTION_ID, STOP_STREAMING_TYPE, confirmPayload)

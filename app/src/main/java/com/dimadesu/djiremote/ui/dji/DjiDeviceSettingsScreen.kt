@@ -26,13 +26,11 @@ fun DjiDeviceSettingsScreen(
     var ssid by remember { mutableStateOf(liveDevice.wifiSsid) }
     var password by remember { mutableStateOf(liveDevice.wifiPassword) }
     var rtmpUrl by remember { mutableStateOf(liveDevice.rtmpUrl) }
-    var selectedModel by remember { mutableStateOf(liveDevice.model) }
     var resolution by remember { mutableStateOf(liveDevice.resolution) }
     var bitrate by remember { mutableStateOf(liveDevice.bitrate) }
     var imageStabilization by remember { mutableStateOf(liveDevice.imageStabilization) }
 
     var expandedResolution by remember { mutableStateOf(false) }
-    var expandedModel by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
     var expandedImageStab by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -153,37 +151,6 @@ fun DjiDeviceSettingsScreen(
             modifier = Modifier.fillMaxWidth()
         )
         
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        // Model dropdown
-        ExposedDropdownMenuBox(
-            expanded = expandedModel,
-            onExpandedChange = { expandedModel = !expandedModel }
-        ) {
-            TextField(
-                value = selectedModel.name.replace("_", " "),
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Camera Model") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedModel) },
-                modifier = Modifier.fillMaxWidth().menuAnchor()
-            )
-            ExposedDropdownMenu(
-                expanded = expandedModel,
-                onDismissRequest = { expandedModel = false }
-            ) {
-                com.dimadesu.djiremote.dji.SettingsDjiDeviceModel.values().forEach { model ->
-                    DropdownMenuItem(
-                        text = { Text(model.name.replace("_", " ")) },
-                        onClick = {
-                            selectedModel = model
-                            expandedModel = false
-                        }
-                    )
-                }
-            }
-        }
-        
         Spacer(modifier = Modifier.height(16.dp))
         Divider()
         Spacer(modifier = Modifier.height(16.dp))
@@ -252,9 +219,9 @@ fun DjiDeviceSettingsScreen(
             }
         }
         
+        // Image Stabilization dropdown (only for models that support it)
+        if (liveDevice.model.hasImageStabilization()) {
         Spacer(modifier = Modifier.height(8.dp))
-        
-        // Image Stabilization dropdown
         ExposedDropdownMenuBox(
             expanded = expandedImageStab,
             onExpandedChange = { expandedImageStab = !expandedImageStab }
@@ -282,6 +249,7 @@ fun DjiDeviceSettingsScreen(
                 }
             }
         }
+        } // end if hasImageStabilization
         
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -328,7 +296,6 @@ fun DjiDeviceSettingsScreen(
                     liveDevice.wifiSsid = ssid
                     liveDevice.wifiPassword = password
                     liveDevice.rtmpUrl = rtmpUrl
-                    liveDevice.model = selectedModel
                     liveDevice.resolution = resolution
                     liveDevice.bitrate = bitrate
                     liveDevice.imageStabilization = imageStabilization

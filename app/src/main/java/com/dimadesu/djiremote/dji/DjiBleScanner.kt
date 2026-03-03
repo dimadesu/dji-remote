@@ -182,21 +182,15 @@ object DjiBleScanner {
         
         // DJI manufacturer ID is 0x08AA (2218 in decimal)
         // The manufacturer ID is stored as little-endian in the key
+        // DJI Technology Co Ltd = 0x08AA (2218), Xtra Ltd = 0xF7AA (63402)
         val djiManufacturerId = 2218
+        val xtraManufacturerId = 63402
         
-        // Check if this manufacturer ID exists
-        val data = record.getManufacturerSpecificData(djiManufacturerId)
-        if (data != null) {
-            Log.d(TAG, "  Found DJI manufacturer ID!")
-            return true
-        }
-        
-        // Also check old format: data starting with 0xAA 0x08
-        val keys = record.manufacturerSpecificData?.let { (0 until it.size()).map { i -> it.keyAt(i) } } ?: emptyList()
-        for (k in keys) {
-            val mfgData = record.getManufacturerSpecificData(k)
-            if (mfgData != null && mfgData.size >= 2 && mfgData[0] == 0xAA.toByte() && mfgData[1] == 0x08.toByte()) {
-                Log.d(TAG, "  Found DJI manufacturer data pattern!")
+        // Check if either manufacturer ID exists
+        for (mfgId in listOf(djiManufacturerId, xtraManufacturerId)) {
+            val data = record.getManufacturerSpecificData(mfgId)
+            if (data != null) {
+                Log.d(TAG, "  Found DJI/Xtra manufacturer ID: $mfgId")
                 return true
             }
         }
@@ -207,14 +201,28 @@ object DjiBleScanner {
     fun getModelFromScanRecord(record: ScanRecord?): SettingsDjiDeviceModel {
         if (record == null) return SettingsDjiDeviceModel.UNKNOWN
         
+        // Check both DJI and Xtra manufacturer IDs
         val djiManufacturerId = 2218
-        val data = record.getManufacturerSpecificData(djiManufacturerId)
+        val xtraManufacturerId = 63402
+        var data: ByteArray? = null
+        for (mfgId in listOf(djiManufacturerId, xtraManufacturerId)) {
+            data = record.getManufacturerSpecificData(mfgId)
+            if (data != null) break
+        }
         
         if (data != null && data.size >= 2) {
             // Model is in bytes 0-1 of manufacturer data (little-endian)
             val modelId = (data[0].toInt() and 0xFF) or ((data[1].toInt() and 0xFF) shl 8)
             Log.d(TAG, "  Model ID from manufacturer data: 0x${modelId.toString(16)}")
             return when (modelId) {
+                0x0010 -> {
+                    Log.d(TAG, "  Detected: OSMO_ACTION_2")
+                    SettingsDjiDeviceModel.OSMO_ACTION_2
+                }
+                0x0012 -> {
+                    Log.d(TAG, "  Detected: OSMO_ACTION_3")
+                    SettingsDjiDeviceModel.OSMO_ACTION_3
+                }
                 0x0014 -> {
                     Log.d(TAG, "  Detected: OSMO_ACTION_4")
                     SettingsDjiDeviceModel.OSMO_ACTION_4
@@ -222,6 +230,14 @@ object DjiBleScanner {
                 0x0015 -> {
                     Log.d(TAG, "  Detected: OSMO_ACTION_5_PRO")
                     SettingsDjiDeviceModel.OSMO_ACTION_5_PRO
+                }
+                0x0017 -> {
+                    Log.d(TAG, "  Detected: OSMO_360")
+                    SettingsDjiDeviceModel.OSMO_360
+                }
+                0x0018 -> {
+                    Log.d(TAG, "  Detected: OSMO_ACTION_6")
+                    SettingsDjiDeviceModel.OSMO_ACTION_6
                 }
                 0x0020 -> {
                     Log.d(TAG, "  Detected: OSMO_POCKET_3")
