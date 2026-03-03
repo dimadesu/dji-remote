@@ -223,87 +223,10 @@ class DjiDevice(private val context: Context) {
     private fun sendPairingMessage() {
         Log.d(TAG, "========== SENDING PAIRING MESSAGE ==========")
         
-        val gatt = bluetoothGatt ?: return
-        
-        // Send a wake-up/ping message first to see if camera responds
-        mainHandler.post {
-            Log.d(TAG, "📤 Sending minimal wake-up message to FFF3...")
-            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
-            val fff3 = service?.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
-            if (fff3 != null) {
-                // Minimal valid DJI message with empty payload
-                val wakeupBytes = byteArrayOf(
-                    0x55, // Magic
-                    0x0B, // Length = 11 (minimum for message with empty payload)
-                    0x04, // Version
-                    0x00, // CRC8 placeholder
-                    0x00, 0x00, // Target
-                    0x00, 0x00, // ID  
-                    0x00, 0x00, 0x00, // Type
-                    0x00, 0x00 // CRC16 placeholder
-                )
-                // Calculate CRC8
-                val crc8 = DjiCrc.computeCrc8(wakeupBytes.sliceArray(0..2))
-                wakeupBytes[3] = crc8.toByte()
-                // Calculate CRC16
-                val crc16 = DjiCrc.computeCrc16(wakeupBytes.sliceArray(0 until wakeupBytes.size - 2))
-                wakeupBytes[wakeupBytes.size - 2] = (crc16 and 0xFF).toByte()
-                wakeupBytes[wakeupBytes.size - 1] = ((crc16 shr 8) and 0xFF).toByte()
-                
-                Log.d(TAG, "  Wake-up message: ${wakeupBytes.joinToString(" ") { "%02X".format(it) }}")
-                fff3.value = wakeupBytes
-                fff3.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // With response
-                val result = gatt.writeCharacteristic(fff3)
-                Log.d(TAG, "  FFF3 wake-up write result: $result")
-            }
-        }
-        
-        // Wait a bit longer before sending the actual pairing message
-        mainHandler.postDelayed({
-            Log.d(TAG, "📤 Now sending actual pairing message to FFF3...")
-            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
-            val fff3 = service?.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
-            if (fff3 != null) {
-                val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
-                val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
-                fff3.value = msg.encode()
-                fff3.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT // With response
-                val result = gatt.writeCharacteristic(fff3)
-                Log.d(TAG, "  FFF3 pairing write result: $result")
-            }
-        }, 1000)
-        
-        // Schedule periodic reads to poll for response
-        for (delay in listOf(2000L, 3000L, 4000L, 5000L)) {
-            mainHandler.postDelayed({
-                Log.d(TAG, "📖 Polling FFF4 at ${delay}ms...")
-                val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
-                val fff4 = service?.getCharacteristic(FFF4_UUID)
-                if (fff4 != null) {
-                    val result = gatt.readCharacteristic(fff4)
-                    Log.d(TAG, "  FFF4 read result: $result")
-                }
-            }, delay)
-        }
-        
-        // Also poll FFF3
-        mainHandler.postDelayed({
-            Log.d(TAG, "📖 Final read from FFF3...")
-            val service = gatt.services?.find { it.uuid.toString().startsWith("0000fff0") }
-            val fff3 = service?.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
-            if (fff3 != null && (fff3.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                val result = gatt.readCharacteristic(fff3)
-                Log.d(TAG, "  FFF3 read result: $result")
-            }
-        }, 6000)
-        
-        // Fallback: Assume pairing succeeded after timeout if no response
-        mainHandler.postDelayed({
-            if (state == DjiDeviceState.CHECKING_IF_PAIRED) {
-                Log.w(TAG, "⚠️ No pairing response received, assuming paired and proceeding...")
-                processPairing()
-            }
-        }, 10000)
+        // Send pair message via FFF5 (same path as all other messages)
+        val pairPayload = DjiPairMessagePayload(PAIR_PIN_CODE).encode()
+        val msg = DjiMessage(PAIR_TARGET, PAIR_TRANSACTION_ID, PAIR_TYPE, pairPayload)
+        writeMessage(msg)
     }
     
     private fun writeNextDescriptor() {
