@@ -92,6 +92,19 @@ fun DjiDevicesSettingsScreen(onOpenDevice: (SettingsDjiDevice) -> Unit) {
                     }
                 }
             }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = {
+                    devices.lastOrNull()?.let { DjiRepository.removeDevice(it.id) }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                    contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Delete last device")
+            }
         }
     }
 }
