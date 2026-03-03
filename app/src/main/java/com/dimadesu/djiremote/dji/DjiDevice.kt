@@ -386,8 +386,13 @@ class DjiDevice(private val context: Context) {
                     // Queue descriptor writes: FFF4 must be last (triggers pairing when enabled)
                     val fff4Descriptor = fff4?.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
                     
-                    // Enable notifications on all characteristics (including FFF3 - use NOTIFY, not INDICATE)
+                    // Enable notifications on RX characteristics only (FFF3, FFF4)
+                    // FFF5 is TX (write-only) - do NOT enable notifications or write descriptor for it
                     for (c in service.characteristics) {
+                        if (c.uuid == FFF5_UUID) {
+                            Log.d(TAG, "    Skipping notifications for FFF5 (TX channel)")
+                            continue
+                        }
                         Log.d(TAG, "    Enabling notifications for: ${c.uuid}")
                         gatt.setCharacteristicNotification(c, true)
                         
