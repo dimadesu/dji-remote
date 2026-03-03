@@ -18,15 +18,19 @@ fun DjiDeviceSettingsScreen(
     onBack: () -> Unit = {},
     onOpenScanner: () -> Unit = {}
 ) {
-    var name by remember { mutableStateOf(device.name) }
-    var ssid by remember { mutableStateOf(device.wifiSsid) }
-    var password by remember { mutableStateOf(device.wifiPassword) }
-    var rtmpUrl by remember { mutableStateOf(device.rtmpUrl) }
-    var selectedModel by remember { mutableStateOf(device.model) }
-    var resolution by remember { mutableStateOf(device.resolution) }
-    var bitrate by remember { mutableStateOf(device.bitrate) }
-    var imageStabilization by remember { mutableStateOf(device.imageStabilization) }
-    var autoRestart by remember { mutableStateOf(device.autoRestartStream) }
+    // Observe the live device from the repository so UI recomposes on state/isStarted changes
+    val allDevices by DjiRepository.devices.collectAsState()
+    val liveDevice = allDevices.firstOrNull { it.id == device.id } ?: device
+    
+    var name by remember { mutableStateOf(liveDevice.name) }
+    var ssid by remember { mutableStateOf(liveDevice.wifiSsid) }
+    var password by remember { mutableStateOf(liveDevice.wifiPassword) }
+    var rtmpUrl by remember { mutableStateOf(liveDevice.rtmpUrl) }
+    var selectedModel by remember { mutableStateOf(liveDevice.model) }
+    var resolution by remember { mutableStateOf(liveDevice.resolution) }
+    var bitrate by remember { mutableStateOf(liveDevice.bitrate) }
+    var imageStabilization by remember { mutableStateOf(liveDevice.imageStabilization) }
+    var autoRestart by remember { mutableStateOf(liveDevice.autoRestartStream) }
     var expandedResolution by remember { mutableStateOf(false) }
     var expandedModel by remember { mutableStateOf(false) }
     var expandedBitrate by remember { mutableStateOf(false) }
@@ -92,11 +96,11 @@ fun DjiDeviceSettingsScreen(
             onClick = onOpenScanner,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(device.bluetoothPeripheralName ?: "Select device")
+            Text(liveDevice.bluetoothPeripheralName ?: "Select device")
         }
-        if (device.bluetoothPeripheralAddress != null) {
+        if (liveDevice.bluetoothPeripheralAddress != null) {
             Text(
-                text = device.bluetoothPeripheralAddress!!,
+                text = liveDevice.bluetoothPeripheralAddress!!,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -309,7 +313,7 @@ fun DjiDeviceSettingsScreen(
             contentAlignment = androidx.compose.ui.Alignment.Center
         ) {
             Text(
-                text = when (device.state) {
+                text = when (liveDevice.state) {
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.IDLE -> "Not started"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.DISCOVERING -> "Discovering"
                     com.dimadesu.djiremote.dji.SettingsDjiDeviceState.CONNECTING -> "Connecting"
@@ -329,22 +333,22 @@ fun DjiDeviceSettingsScreen(
         Spacer(modifier = Modifier.height(16.dp))
         
         // Start/Stop button section (no header in Moblin)
-        if (!device.isStarted) {
+        if (!liveDevice.isStarted) {
             Button(
                 onClick = {
                     // Save before starting
-                    device.name = name
-                    device.wifiSsid = ssid
-                    device.wifiPassword = password
-                    device.rtmpUrl = rtmpUrl
-                    device.model = selectedModel
-                    device.resolution = resolution
-                    device.bitrate = bitrate
-                    device.imageStabilization = imageStabilization
-                    device.autoRestartStream = autoRestart
-                    DjiRepository.updateDevice(device)
+                    liveDevice.name = name
+                    liveDevice.wifiSsid = ssid
+                    liveDevice.wifiPassword = password
+                    liveDevice.rtmpUrl = rtmpUrl
+                    liveDevice.model = selectedModel
+                    liveDevice.resolution = resolution
+                    liveDevice.bitrate = bitrate
+                    liveDevice.imageStabilization = imageStabilization
+                    liveDevice.autoRestartStream = autoRestart
+                    DjiRepository.updateDevice(liveDevice)
                     
-                    com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, device)
+                    com.dimadesu.djiremote.dji.DjiModel.startStreaming(context, liveDevice)
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -353,7 +357,7 @@ fun DjiDeviceSettingsScreen(
         } else {
             Button(
                 onClick = {
-                    com.dimadesu.djiremote.dji.DjiModel.stopStreaming(device)
+                    com.dimadesu.djiremote.dji.DjiModel.stopStreaming(liveDevice)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
