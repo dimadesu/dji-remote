@@ -13,8 +13,8 @@ enum class SettingsDjiDeviceModel {
     OSMO_360;
 
     fun hasImageStabilization(): Boolean = when (this) {
-        OSMO_ACTION_4, OSMO_ACTION_5_PRO, OSMO_ACTION_6, OSMO_360 -> true
-        else -> false
+        OSMO_ACTION_2, OSMO_ACTION_3, OSMO_POCKET_3 -> false
+        else -> true // Show for UNKNOWN too — safe default
     }
 
     fun hasNewProtocol(): Boolean = when (this) {
