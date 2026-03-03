@@ -448,11 +448,15 @@ class DjiDevice(private val context: Context) {
             
             Log.d(TAG, "RX: ${characteristic.uuid}, ${value.size} bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
             
-            // Skip continuation chunks that don't start with 0x55 (they're appended via rxBuffer)
-            if (value[0] != 0x55.toByte()) return
+            // Continuation chunks (no 0x55 header) should be discarded per reference implementation
+            // MTU 128 means responses fit in a single notification so multi-chunk RX shouldn't happen
+            if (value[0] != 0x55.toByte()) {
+                Log.d(TAG, "RX: Discarding non-0x55 continuation chunk")
+                return
+            }
             
-            // Append to reassembly buffer
-            rxBuffer += value
+            // Start fresh buffer with this message
+            rxBuffer = value.copyOf()
             
             // Try to extract complete DJI messages from the buffer
             while (rxBuffer.size >= 2) {
