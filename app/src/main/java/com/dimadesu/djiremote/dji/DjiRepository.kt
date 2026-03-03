@@ -44,7 +44,9 @@ object DjiRepository {
     }
 
     fun updateDevice(device: SettingsDjiDevice) {
-        _devices.value = _devices.value.map { if (it.id == device.id) device else it }
+        // Use copy() to ensure StateFlow detects the change (same-reference mutation is invisible)
+        val updated = device.copy()
+        _devices.value = _devices.value.map { if (it.id == updated.id) updated else it }
         saveToStorage()
     }
 }

@@ -28,11 +28,8 @@ data class SettingsDjiDevice(
     var fps: Int = 30,
     var bitrate: Int = 6_000_000,
     var imageStabilization: SettingsDjiDeviceImageStabilization = SettingsDjiDeviceImageStabilization.OFF,
-    var autoRestartStream: Boolean = false
-) {
-    // Runtime state - not persisted
-    @Transient
-    var isStarted: Boolean = false
-    @Transient
-    var state: SettingsDjiDeviceState = SettingsDjiDeviceState.IDLE
-}
+    var autoRestartStream: Boolean = false,
+    // Runtime state - included in data class equals/hashCode so StateFlow emits on change
+    @Transient var isStarted: Boolean = false,
+    @Transient var state: SettingsDjiDeviceState = SettingsDjiDeviceState.IDLE
+)
