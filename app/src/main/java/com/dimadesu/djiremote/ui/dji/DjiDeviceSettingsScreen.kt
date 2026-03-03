@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dimadesu.djiremote.dji.DjiRepository
 import com.dimadesu.djiremote.dji.SettingsDjiDevice
@@ -130,7 +131,8 @@ fun DjiDeviceSettingsScreen(
             onValueChange = { password = it },
             label = { Text("Password") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !liveDevice.isStarted
+            enabled = !liveDevice.isStarted,
+            visualTransformation = PasswordVisualTransformation()
         )
         
         Spacer(modifier = Modifier.height(4.dp))
