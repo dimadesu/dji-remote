@@ -431,9 +431,20 @@ class DjiDevice(private val context: Context) {
             }
         }
 
+        // Android 13+ (API 33 TIRAMISU) uses this new overload - the old one without value param is NOT called
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            processIncomingData(characteristic, value)
+        }
+
+        // Pre-Android 13 uses this deprecated overload
+        @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            val value = characteristic.value
-            if (value == null || value.isEmpty()) return
+            val value = characteristic.value ?: return
+            processIncomingData(characteristic, value)
+        }
+
+        private fun processIncomingData(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            if (value.isEmpty()) return
             
             Log.d(TAG, "RX: ${characteristic.uuid}, ${value.size} bytes: ${value.joinToString(" ") { "%02X".format(it) }}")
             
