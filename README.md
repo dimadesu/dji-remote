@@ -1,4 +1,4 @@
-# Android DJI camera remote control app for RTMP livestreaming
+# Unofficial DJI camera remote control Android app for RTMP livestreaming
 
 Android app that can remote control DJI cameras like Action 4 via Bluetooth and allows to configure and start/stop RTMP livestream a lot faster and easier compared to DJI official app Mimo.
 
@@ -10,6 +10,12 @@ RTMP stream parameters that can be configured:
 - Resolution
 - Bitrate
 - Stabilisation
+
+![dji-remote screenshot](docs/dji-remote-screenshot.png)
+
+## Feedback
+
+Share ideas or report issues in Discord https://discord.gg/2UzEkU2AJW or create Git issues.
 
 ## What cameras are supported?
 
@@ -24,6 +30,8 @@ List of all cameras that can work in theory:
 - DJI Osmo Action 6
 - DJI Osmo 360
 - DJI Osmo Pocket 3
+
+## How to install
 
 ### GitHub releases
 
