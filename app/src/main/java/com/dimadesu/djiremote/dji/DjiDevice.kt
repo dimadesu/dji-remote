@@ -623,20 +623,8 @@ class DjiDevice(private val context: Context) {
         val bytes = message.encode()
         Log.d(TAG, "  Encoded ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
         
-        // Try writing to FFF3 with WRITE (with response) for important messages
-        val gatt = bluetoothGatt
-        if (gatt != null && fff3Characteristic != null) {
-            mainHandler.post {
-                Log.d(TAG, "  Trying to write to FFF3 with response...")
-                fff3Characteristic?.value = bytes
-                fff3Characteristic?.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                val result = gatt.writeCharacteristic(fff3Characteristic)
-                Log.d(TAG, "  FFF3 write result: $result")
-            }
-        } else {
-            // Fall back to FFF5 with WRITE_NO_RESPONSE
-            enqueueWrite(bytes)
-        }
+        // Write to FFF5 with WRITE_NO_RESPONSE (matching Moblin iOS and working Android reference)
+        enqueueWrite(bytes)
     }
 
     private fun enqueueWrite(value: ByteArray) {
