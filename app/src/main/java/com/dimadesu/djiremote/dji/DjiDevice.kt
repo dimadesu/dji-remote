@@ -13,6 +13,7 @@ import java.util.UUID
 private const val TAG = "DjiDevice"
 
 // UUIDs from the iOS implementation (16-bit) expanded to 128-bit base
+val FFF3_UUID: UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb")
 val FFF4_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
 val FFF5_UUID: UUID = UUID.fromString("0000fff5-0000-1000-8000-00805f9b34fb")
 
@@ -62,6 +63,7 @@ interface DjiDeviceDelegate {
 
 class DjiDevice(private val context: Context) {
     private var bluetoothGatt: BluetoothGatt? = null
+    private var fff3Characteristic: BluetoothGattCharacteristic? = null
     private var fff5Characteristic: BluetoothGattCharacteristic? = null
     private var fff4Characteristic: BluetoothGattCharacteristic? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -151,6 +153,7 @@ class DjiDevice(private val context: Context) {
         bluetoothGatt?.disconnect()
         bluetoothGatt?.close()
         bluetoothGatt = null
+        fff3Characteristic = null
         fff5Characteristic = null
         batteryPercentage = null
         rxBuffer = ByteArray(0)
@@ -351,13 +354,14 @@ class DjiDevice(private val context: Context) {
                 Log.d(TAG, "  Service: ${service.uuid}")
                 val fff5 = service.getCharacteristic(FFF5_UUID)
                 val fff4 = service.getCharacteristic(FFF4_UUID)
-                val fff3 = service.getCharacteristic(UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb"))
+                val fff3 = service.getCharacteristic(FFF3_UUID)
                 
                 if (fff5 != null || fff4 != null || fff3 != null) {
                     Log.d(TAG, "Found DJI characteristics in service ${service.uuid}!")
                     
                     if (fff3 != null) {
                         Log.d(TAG, "  Found FFF3 characteristic")
+                        fff3Characteristic = fff3
                     }
                     
                     if (fff5 != null) {
@@ -552,9 +556,13 @@ class DjiDevice(private val context: Context) {
             isWriting = false
             return
         }
-        val char = fff5Characteristic ?: run {
-            Log.e(TAG, "writeNextChunk: fff5Characteristic is null!")
-            // clear queue if characteristic missing
+        // Spillmaker's approach: OA5P (new protocol) devices write to FFF3
+        val char = if (model.hasNewProtocol()) {
+            fff3Characteristic ?: fff5Characteristic
+        } else {
+            fff5Characteristic
+        } ?: run {
+            Log.e(TAG, "writeNextChunk: write characteristic is null!")
             writeQueue.clear()
             isWriting = false
             return
@@ -637,7 +645,11 @@ class DjiDevice(private val context: Context) {
             setState(DjiDeviceState.WIFI_SETUP_FAILED)
             return
         }
-        if (model.hasImageStabilization()) {
+        if (model.hasNewProtocol()) {
+            // Spillmaker's approach: skip separate configure step, bundle everything
+            // in sendStartStreaming() which includes RTMP + EIS + confirm
+            sendStartStreaming()
+        } else if (model.hasImageStabilization()) {
             val imageStab = imageStabilization ?: return
             val payload = DjiConfigureMessagePayload(imageStab, model.hasNewProtocol()).encode()
             val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
@@ -658,14 +670,30 @@ class DjiDevice(private val context: Context) {
         val res = resolution ?: return
         val oa5 = model.hasNewProtocol()
         val payload = DjiStartStreamingMessagePayload(rtmp, res, fps, bitrateKbps, oa5).encode()
-        val message = DjiMessage(START_STREAMING_TARGET, START_STREAMING_TRANSACTION_ID, START_STREAMING_TYPE, payload)
-        writeMessage(message)
+        val startMsg = DjiMessage(START_STREAMING_TARGET, START_STREAMING_TRANSACTION_ID, START_STREAMING_TYPE, payload)
 
-        // New protocol devices (OA5P, OA6, 360): send confirm-start payload
         if (oa5) {
+            // Spillmaker's approach: bundle RTMP config + EIS config + confirm-start
+            // into a single concatenated write for new protocol devices
+            val startBytes = startMsg.encode()
+
+            // EIS config (same as DjiConfigureMessagePayload)
+            val imageStab = imageStabilization ?: SettingsDjiDeviceImageStabilization.OFF
+            val eisPayload = DjiConfigureMessagePayload(imageStab, true).encode()
+            val eisMsg = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, eisPayload)
+            val eisBytes = eisMsg.encode()
+
+            // Confirm-start broadcast
             val confirmPayload = DjiConfirmStartStreamingMessagePayload().encode()
             val confirmMsg = DjiMessage(STOP_STREAMING_TARGET, STOP_STREAMING_TRANSACTION_ID, STOP_STREAMING_TYPE, confirmPayload)
-            writeMessage(confirmMsg)
+            val confirmBytes = confirmMsg.encode()
+
+            // Concatenate all three and write as one blob
+            val combined = startBytes + eisBytes + confirmBytes
+            Log.d(TAG, "sendStartStreaming (bundled): ${combined.size} bytes = RTMP(${startBytes.size}) + EIS(${eisBytes.size}) + Confirm(${confirmBytes.size})")
+            enqueueWrite(combined)
+        } else {
+            writeMessage(startMsg)
         }
 
         setState(DjiDeviceState.STARTING_STREAM)
