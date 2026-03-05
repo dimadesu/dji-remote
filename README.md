@@ -1,6 +1,6 @@
 # Unofficial DJI camera remote control Android app for RTMP livestreaming
 
-Android app that can remote control DJI cameras like Action 4 via Bluetooth and allows to configure and start/stop RTMP livestream a lot faster and easier compared to DJI official app Mimo.
+Android app that can remote control DJI cameras like Action 4 via Bluetooth and allows to configure and start/stop RTMP livestream a lot faster and easier compared to official DJI Mimo app.
 
 This functionality was originally developed in iOS app [Moblin](https://github.com/eerimoq/Moblin), which I've ported to Android.
 
@@ -9,7 +9,9 @@ RTMP stream parameters that can be configured:
 - RTMP URL to stream to
 - Resolution
 - Bitrate
+  - Note: DJI Mimo's max bitrate is 6000 kbps. This can make camera send higher bitrates. I recommend to not go above 10,000 kbps or at least test first that your gear can handle longer streams reliably with higher bitrates.
 - Stabilisation
+- FPS for DJI Osmo Pocket 3
 
 ![dji-remote screenshot](docs/dji-remote-screenshot.png)
 
@@ -29,13 +31,13 @@ I only have Action 4 to test. I can confirm it works.
 
 List of all cameras that can work in theory:
 
-- DJI Osmo Action 2
-- DJI Osmo Action 3
-- DJI Osmo Action 4
-- DJI Osmo Action 5 Pro
-- DJI Osmo Action 6
-- DJI Osmo 360
-- DJI Osmo Pocket 3
+- ❓ DJI Osmo Action 2
+- ❓ DJI Osmo Action 3
+- ✅ DJI Osmo Action 4
+- ❌ DJI Osmo Action 5 Pro - I had a report that it doesn't fully start the stream: app shows "Streaming", while camera gets stuck on "Preparing to livestream...".
+- ❓ DJI Osmo Action 6
+- ❓ DJI Osmo 360
+- ❓ DJI Osmo Pocket 3
 
 ## How to install
 
@@ -47,9 +49,9 @@ Open [GitHub releases page](https://github.com/dimadesu/dji-remote/releases) on 
 
 ## Other projects of mine
 
-- [LifeStreamer](https://github.com/dimadesu/LifeStreamer) - Android IRL live streaming app - use device cameras, RTMP, SRT, USB as sources + HEVC + SRT + adaptive bitrate.
+- [LifeStreamer](https://github.com/dimadesu/LifeStreamer) - Android IRL live streaming app - use device cameras, RTMP, SRT, USB as sources, publish HEVC with adaptive bitrate over SRT.
 - [Bond Bunny](https://github.com/dimadesu/bond-bunny) - Android SRTLA bonding app. Add SRTLA bonding to any SRT stream.
-- [MediaSrvr](https://github.com/dimadesu/MediaSrvr) - run RTMP media server as Android app.
+- [MediaSrvr](https://github.com/dimadesu/MediaSrvr) - run RTMP media server as an Android app.
 - [ScreenStreamerGo](https://github.com/dimadesu/ScreenStreamerGo) - free app to stream Android device screen over SRT/RTMP (in early stages of development).
 
 ## Special thanks
