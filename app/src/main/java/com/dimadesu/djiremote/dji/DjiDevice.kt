@@ -8,9 +8,42 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 private const val TAG = "DjiDevice"
+
+// Set to true to enable file logging and the "Share debug logs" button.
+// Keep false for production to avoid unbounded log file growth during long streams.
+const val DEBUG_LOGGING_ENABLED = false
+
+// File logger — writes timestamped log lines to dji_debug.txt on external storage.
+// Useful for remote testers who can't use adb.
+object DjiFileLogger {
+    private var logFile: File? = null
+
+    fun init(context: Context) {
+        if (!DEBUG_LOGGING_ENABLED) return
+        val dir = context.getExternalFilesDir(null) ?: context.filesDir
+        logFile = File(dir, "dji_debug.txt").also {
+            it.writeText("") // Clear previous session
+        }
+    }
+
+    fun log(msg: String) {
+        if (!DEBUG_LOGGING_ENABLED) return
+        val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        try { logFile?.appendText("$ts $msg\n") } catch (_: Exception) {}
+    }
+
+    fun getPath(): String? = logFile?.absolutePath
+
+    /** Returns the log file if it exists and is non-empty, or null. */
+    fun getFile(): File? = logFile?.takeIf { it.exists() && it.length() > 0 }
+}
 
 // UUIDs from the iOS implementation (16-bit) expanded to 128-bit base
 val FFF4_UUID: UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb")
@@ -97,6 +130,12 @@ class DjiDevice(private val context: Context) {
     private var startStreamingRunnable: Runnable? = null
     private var stopStreamingRunnable: Runnable? = null
 
+    // Write to both logcat and the debug log file.
+    private fun djiLog(msg: String) {
+        Log.d(TAG, msg)
+        DjiFileLogger.log(msg)
+    }
+
     // Bonding receiver
     private var bondingReceiver: BroadcastReceiver? = null
     private var pendingBondAddress: String? = null
@@ -112,10 +151,12 @@ class DjiDevice(private val context: Context) {
         imageStabilization: SettingsDjiDeviceImageStabilization,
         model: SettingsDjiDeviceModel
     ) {
-        Log.d(TAG, "startLiveStream: address=$address, model=$model")
-        Log.d(TAG, "  WiFi: $wifiSsid")
-        Log.d(TAG, "  RTMP: $rtmpUrl")
-        Log.d(TAG, "  Resolution: $resolution, FPS: $fps, Bitrate: ${bitrateKbps}kbps")
+        DjiFileLogger.init(context)
+        djiLog("=== startLiveStream: address=$address, model=$model ===")
+        djiLog("  WiFi: $wifiSsid")
+        djiLog("  RTMP: $rtmpUrl")
+        djiLog("  Resolution: $resolution, FPS: $fps, Bitrate: ${bitrateKbps}kbps")
+        djiLog("  Log file: ${DjiFileLogger.getPath()}")
         
         // configure
         this.wifiSsid = wifiSsid
@@ -189,7 +230,7 @@ class DjiDevice(private val context: Context) {
 
     private fun setState(newState: DjiDeviceState) {
         if (newState == state) return
-        Log.d(TAG, "State transition: $state -> $newState")
+        djiLog("State: $state -> $newState")
         state = newState
         delegate?.djiDeviceStreamingState(this, state)
     }
@@ -498,7 +539,7 @@ class DjiDevice(private val context: Context) {
     }
 
     private fun handleDecodedMessage(message: DjiMessage) {
-        Log.d(TAG, "handleDecodedMessage: state=$state, id=0x${message.id.toString(16)}")
+        djiLog("RX decoded: state=$state id=0x${message.id.toString(16)} target=0x${message.target.toString(16)} type=0x${message.type.toString(16)} payload=${message.payload.joinToString("") { "%02X".format(it) }}")
         when (state) {
             DjiDeviceState.CHECKING_IF_PAIRED -> processCheckingIfPaired(message)
             DjiDeviceState.PAIRING -> processPairing()
@@ -510,15 +551,14 @@ class DjiDevice(private val context: Context) {
             DjiDeviceState.STREAMING -> processStreaming(message)
             DjiDeviceState.STOPPING_STREAM -> processStoppingStream(message)
             else -> {
-                Log.d(TAG, "Message in state $state ignored")
+                djiLog("Message in state $state ignored")
             }
         }
     }
 
     fun writeMessage(message: DjiMessage) {
-        Log.d(TAG, "writeMessage: target=0x${message.target.toString(16)}, type=0x${message.type.toString(16)}, id=0x${message.id.toString(16)}")
         val bytes = message.encode()
-        Log.d(TAG, "  Encoded ${bytes.size} bytes: ${bytes.joinToString(" ") { "%02X".format(it) }}")
+        djiLog("TX: target=0x${message.target.toString(16)} id=0x${message.id.toString(16)} type=0x${message.type.toString(16)} ${bytes.size}B: ${bytes.joinToString("") { "%02X".format(it) }}")
         
         // Write to FFF5 with WRITE_NO_RESPONSE (matching Moblin iOS and working Android reference)
         enqueueWrite(bytes)
@@ -632,19 +672,35 @@ class DjiDevice(private val context: Context) {
 
     private fun processSettingUpWifi(response: DjiMessage) {
         if (response.id != SETUP_WIFI_TRANSACTION_ID) return
+        djiLog("WiFi setup response payload: ${response.payload.joinToString(" ") { "%02X".format(it) }}")
         if (!response.payload.contentEquals(byteArrayOf(0x00, 0x00))) {
+            djiLog("WiFi setup FAILED (expected 00 00, got above)")
             reset()
             setState(DjiDeviceState.WIFI_SETUP_FAILED)
             return
         }
-        if (model.hasImageStabilization()) {
-            val imageStab = imageStabilization ?: return
-            val payload = DjiConfigureMessagePayload(imageStab, model.hasNewProtocol()).encode()
-            val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
-            writeMessage(message)
-            setState(DjiDeviceState.CONFIGURING)
-        } else {
-            sendStartStreaming()
+        djiLog("WiFi setup OK")
+        when (model) {
+            SettingsDjiDeviceModel.OSMO_ACTION_2, SettingsDjiDeviceModel.OSMO_ACTION_3 -> {
+                sendStartStreaming()
+            }
+            SettingsDjiDeviceModel.OSMO_ACTION_4 -> {
+                val imageStab = imageStabilization ?: return
+                val payload = DjiConfigureMessagePayload(imageStab, oa5 = false).encode()
+                val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
+                writeMessage(message)
+                setState(DjiDeviceState.CONFIGURING)
+            }
+            SettingsDjiDeviceModel.OSMO_ACTION_5_PRO, SettingsDjiDeviceModel.OSMO_ACTION_6, SettingsDjiDeviceModel.OSMO_360 -> {
+                val imageStab = imageStabilization ?: return
+                val payload = DjiConfigureMessagePayload(imageStab, oa5 = true).encode()
+                val message = DjiMessage(CONFIGURE_TARGET, CONFIGURE_TRANSACTION_ID, CONFIGURE_TYPE, payload)
+                writeMessage(message)
+                setState(DjiDeviceState.CONFIGURING)
+            }
+            SettingsDjiDeviceModel.OSMO_POCKET_3, SettingsDjiDeviceModel.UNKNOWN -> {
+                sendStartStreaming()
+            }
         }
     }
 
@@ -661,7 +717,8 @@ class DjiDevice(private val context: Context) {
         val message = DjiMessage(START_STREAMING_TARGET, START_STREAMING_TRANSACTION_ID, START_STREAMING_TYPE, payload)
         writeMessage(message)
 
-        // New protocol devices (OA5P, OA6, 360): send confirm-start payload
+        // New protocol (OA5P, OA6, 360): send confirm immediately alongside start-streaming,
+        // matching Moblin iOS behaviour — both messages are queued before any response arrives.
         if (oa5) {
             val confirmPayload = DjiConfirmStartStreamingMessagePayload().encode()
             val confirmMsg = DjiMessage(STOP_STREAMING_TARGET, STOP_STREAMING_TRANSACTION_ID, STOP_STREAMING_TYPE, confirmPayload)
@@ -672,6 +729,9 @@ class DjiDevice(private val context: Context) {
     }
 
     private fun processStartingStream(response: DjiMessage) {
+        // Matches Moblin: transition to STREAMING on the start-streaming response (0x8C2C).
+        // The confirm (0xEAC8) was already queued; its response arrives after we're already
+        // in .streaming and is handled (ignored) there.
         if (response.id != START_STREAMING_TRANSACTION_ID) return
         setState(DjiDeviceState.STREAMING)
         stopStartStreamingTimer()

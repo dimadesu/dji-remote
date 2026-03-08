@@ -1,5 +1,6 @@
 package com.dimadesu.djiremote.ui.dji
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.dimadesu.djiremote.dji.DjiFileLogger
 import com.dimadesu.djiremote.dji.DjiRepository
 import com.dimadesu.djiremote.dji.SettingsDjiDevice
 
@@ -386,6 +388,31 @@ fun DjiDeviceSettingsScreen(
             ) {
                 Text("Stop live stream")
             }
+        }
+
+        // Share debug logs button (only visible when debug logging is enabled)
+        if (!com.dimadesu.djiremote.dji.DEBUG_LOGGING_ENABLED) return@Column
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Divider()
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedButton(
+            onClick = {
+                val file = DjiFileLogger.getFile()
+                if (file != null) {
+                    val logText = file.readText()
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, logText)
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share debug logs"))
+                } else {
+                    android.widget.Toast.makeText(context, "No logs yet — start a stream first", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Share debug logs")
         }
     }
 }

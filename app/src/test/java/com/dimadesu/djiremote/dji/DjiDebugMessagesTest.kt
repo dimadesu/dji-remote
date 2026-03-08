@@ -6,7 +6,7 @@ class DjiDebugMessagesTest {
     @Test
     fun testPossibleIssues() {
         println("Possible issues why camera is not responding:")
-        println("=" * 50)
+        println("=".repeat(50))
         println()
         println("1. BONDING ISSUE")
         println("   - Camera might need to be bonded (paired) at OS level first")
