@@ -34,10 +34,10 @@ List of all cameras that can work in theory:
 - ❓ DJI Osmo Action 2
 - ❓ DJI Osmo Action 3
 - ✅ DJI Osmo Action 4
-- ❌ DJI Osmo Action 5 Pro - I had a report that it doesn't fully start the stream: app shows "Streaming", while camera gets stuck on "Preparing to livestream...".
+- ✅ DJI Osmo Action 5 Pro
 - ❓ DJI Osmo Action 6
 - ❓ DJI Osmo 360
-- ✅ DJI Osmo Pocket 3 - I had a report that it's working.
+- ✅ DJI Osmo Pocket 3
 
 ## How to install
 
