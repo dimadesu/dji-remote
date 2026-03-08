@@ -21,9 +21,16 @@ import android.util.Log
 
 private const val TAG = "DjiBleScanner"
 
+data class DiscoveredDjiDevice(
+    val id: String,
+    val address: String,
+    val name: String,
+    val model: SettingsDjiDeviceModel
+)
+
 object DjiBleScanner {
-    private val _discovered = MutableStateFlow<List<Triple<String, String, String>>>(emptyList())
-    val discovered: StateFlow<List<Triple<String, String, String>>> = _discovered
+    private val _discovered = MutableStateFlow<List<DiscoveredDjiDevice>>(emptyList())
+    val discovered: StateFlow<List<DiscoveredDjiDevice>> = _discovered
 
     private var scanning = false
     private val _scanError = MutableStateFlow<String?>(null)
@@ -32,7 +39,7 @@ object DjiBleScanner {
     private val handler = Handler(Looper.getMainLooper())
     private var callback: ScanCallback? = null
     private var filterOnlyDji: Boolean = true
-    private val foundDevices = mutableListOf<Triple<String, String, String>>()
+    private val foundDevices = mutableListOf<DiscoveredDjiDevice>()
 
     fun hasPermissions(context: Context): Boolean {
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -124,9 +131,9 @@ object DjiBleScanner {
                     
                     val id = UUID.nameUUIDFromBytes(address.toByteArray(StandardCharsets.UTF_8)).toString()
                     synchronized(foundDevices) {
-                        if (foundDevices.none { it.first == id }) {
+                        if (foundDevices.none { it.id == id }) {
                             Log.d(TAG, "  Adding to list")
-                            foundDevices.add(Triple(id, address, name))
+                            foundDevices.add(DiscoveredDjiDevice(id, address, name, model))
                             _discovered.value = foundDevices.toList()
                         }
                     }

@@ -63,10 +63,11 @@ class MainActivity : ComponentActivity() {
                             }
                             "device-scanner" -> {
                                 DjiBleScannerScreen(
-                                    onSelect = { address, name ->
+                                    onSelect = { address, name, model ->
                                         selectedDevice?.let { d ->
                                             d.bluetoothPeripheralAddress = address
                                             d.bluetoothPeripheralName = name
+                                            d.model = model
                                             com.dimadesu.djiremote.dji.DjiRepository.updateDevice(d)
                                         }
                                         screen = "device"

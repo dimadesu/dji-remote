@@ -21,7 +21,7 @@ import android.util.Log
 private const val TAG = "DjiBleScannerScreen"
 
 @Composable
-fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) {
+fun DjiBleScannerScreen(onSelect: (String, String, com.dimadesu.djiremote.dji.SettingsDjiDeviceModel) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val discoveredState by DjiBleScanner.discovered.collectAsState()
     val scanError by DjiBleScanner.scanError.collectAsState(initial = null)
@@ -95,13 +95,13 @@ fun DjiBleScannerScreen(onSelect: (String, String) -> Unit, onBack: () -> Unit) 
 
         Spacer(modifier = Modifier.height(8.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(discoveredState) { (id, address, name) ->
+            items(discoveredState) { device ->
                 Row(modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelect(address, name) }
+                    .clickable { onSelect(device.address, device.name, device.model) }
                     .padding(8.dp)) {
-                    Text(name, modifier = Modifier.weight(1f))
-                    Text(address)
+                    Text(device.name, modifier = Modifier.weight(1f))
+                    Text(device.address)
                 }
             }
         }
