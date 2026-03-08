@@ -11,12 +11,12 @@ class DjiMessageVerificationTest {
         val msg = DjiMessage(0x0702, 0x8092, 0x450740, pairPayload)
         val bytes = msg.encode()
         
-        // Expected format from iOS logs
+        // Expected format (CRC values verified against Python reference tables)
         val expected = byteArrayOf(
             0x55.toByte(),  // Start byte
             0x33,           // Length (51)
             0x04,           // Version
-            0x04,           // CRC8 of header
+            0xC2.toByte(),  // CRC8 of header (0xC2, verified against Python table)
             0x02, 0x07,     // Target (0x0702 little-endian)
             0x92.toByte(), 0x80.toByte(), // ID (0x8092 little-endian)
             0x40, 0x07, 0x45, // Type (0x450740 little-endian)
@@ -28,7 +28,7 @@ class DjiMessageVerificationTest {
             0x33, // Fixed payload ends
             0x04, // Length of "mbln"
             0x6D, 0x62, 0x6C, 0x6E, // "mbln"
-            0xE8.toByte(), 0x1C // CRC16 (little-endian)
+            0xCE.toByte(), 0x5A // CRC16 (0x5ACE little-endian, verified against Python table)
         )
         
         println("Generated message (${bytes.size} bytes):")

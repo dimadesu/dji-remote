@@ -46,7 +46,7 @@ class DjiProtocolAnalysisTest {
         )
         
         val crc8 = DjiCrc.computeCrc8(minimalBytes.sliceArray(0..2))
-        minimalBytes[3] = crc8
+        minimalBytes[3] = crc8.toByte()
         
         println("Minimal DJI message (wake-up):")
         println("  ${minimalBytes.joinToString(" ") { "%02X".format(it) }}")
