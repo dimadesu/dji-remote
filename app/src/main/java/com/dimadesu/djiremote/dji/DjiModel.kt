@@ -14,6 +14,8 @@ object DjiModel : DjiDeviceDelegate {
     private val devices = mutableMapOf<String, DjiDevice>()
     private val scope: CoroutineScope = MainScope()
     private val contextsByAddress = mutableMapOf<String, Context>()
+    // Track which SettingsDjiDevice profile (by UUID) is actively streaming per BT address
+    private val activeProfileByAddress = mutableMapOf<String, java.util.UUID>()
 
     fun startStreaming(context: Context, settings: SettingsDjiDevice) {
         Log.d(TAG, "startStreaming called for device: ${settings.name}")
@@ -43,6 +45,7 @@ object DjiModel : DjiDeviceDelegate {
         
         Log.d(TAG, "All prerequisites met, starting stream...")
         contextsByAddress[address] = context
+        activeProfileByAddress[address] = settings.id
         val device = devices.getOrPut(address) { DjiDevice(context).also { it.delegate = this } }
         // map Settings to DjiDevice start params
         val model = settings.model
@@ -75,6 +78,7 @@ object DjiModel : DjiDeviceDelegate {
         val address = settings.bluetoothPeripheralAddress ?: return
         val device = devices[address] ?: return
         device.stopLiveStream()
+        activeProfileByAddress.remove(address)
         scope.launch(Dispatchers.Main) {
             DjiRepository.updateDevice(settings.copy(isStarted = false, state = SettingsDjiDeviceState.IDLE))
         }
@@ -87,7 +91,12 @@ object DjiModel : DjiDeviceDelegate {
         if (address == null) return
         scope.launch(Dispatchers.Main) {
             val currentList = DjiRepository.devices.value
-            val existing = currentList.firstOrNull { it.bluetoothPeripheralAddress == address } ?: return@launch
+            val profileId = activeProfileByAddress[address]
+            val existing = (if (profileId != null) {
+                currentList.firstOrNull { it.id == profileId }
+            } else {
+                currentList.firstOrNull { it.bluetoothPeripheralAddress == address }
+            }) ?: return@launch
             val newState = when (state) {
                 DjiDeviceState.IDLE -> SettingsDjiDeviceState.IDLE
                 DjiDeviceState.DISCOVERING -> SettingsDjiDeviceState.DISCOVERING
@@ -110,6 +119,7 @@ object DjiModel : DjiDeviceDelegate {
             when (state) {
                 DjiDeviceState.IDLE, DjiDeviceState.WIFI_SETUP_FAILED -> {
                     updated = updated.copy(isStarted = false)
+                    activeProfileByAddress.remove(address)
                 }
                 else -> {}
             }
