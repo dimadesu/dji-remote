@@ -65,10 +65,13 @@ class MainActivity : ComponentActivity() {
                                 DjiBleScannerScreen(
                                     onSelect = { address, name, model ->
                                         selectedDevice?.let { d ->
-                                            d.bluetoothPeripheralAddress = address
-                                            d.bluetoothPeripheralName = name
-                                            d.model = model
-                                            com.dimadesu.djiremote.dji.DjiRepository.updateDevice(d)
+                                            val latest = com.dimadesu.djiremote.dji.DjiRepository.devices.value
+                                                .firstOrNull { it.id == d.id } ?: d
+                                            com.dimadesu.djiremote.dji.DjiRepository.updateDevice(latest.copy(
+                                                bluetoothPeripheralAddress = address,
+                                                bluetoothPeripheralName = name,
+                                                model = model
+                                            ))
                                         }
                                         screen = "device"
                                     },
