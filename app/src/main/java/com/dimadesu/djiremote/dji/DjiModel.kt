@@ -9,11 +9,11 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "DjiModel"
 
-// Simple model that manages DjiDevice instances and acts as the delegate
+// Manages DjiDevice instances keyed by profile UUID, matching Moblin's approach.
+// Each SettingsDjiDevice profile gets its own DjiDevice instance.
 object DjiModel : DjiDeviceDelegate {
-    private val devices = mutableMapOf<String, DjiDevice>()
+    private val deviceWrappers = mutableMapOf<java.util.UUID, DjiDevice>()
     private val scope: CoroutineScope = MainScope()
-    private val contextsByAddress = mutableMapOf<String, Context>()
 
     fun startStreaming(context: Context, settings: SettingsDjiDevice) {
         Log.d(TAG, "startStreaming called for device: ${settings.name}")
@@ -42,8 +42,9 @@ object DjiModel : DjiDeviceDelegate {
         }
         
         Log.d(TAG, "All prerequisites met, starting stream...")
-        contextsByAddress[address] = context
-        val device = devices.getOrPut(address) { DjiDevice(context).also { it.delegate = this } }
+        val device = deviceWrappers.getOrPut(settings.id) {
+            DjiDevice(context).also { it.delegate = this }
+        }
         // map Settings to DjiDevice start params
         val model = settings.model
         val res = when (settings.resolution) {
@@ -72,22 +73,23 @@ object DjiModel : DjiDeviceDelegate {
     }
 
     fun stopStreaming(settings: SettingsDjiDevice) {
-        val address = settings.bluetoothPeripheralAddress ?: return
-        val device = devices[address] ?: return
+        val device = deviceWrappers[settings.id] ?: return
         device.stopLiveStream()
         scope.launch(Dispatchers.Main) {
             DjiRepository.updateDevice(settings.copy(isStarted = false, state = SettingsDjiDeviceState.IDLE))
         }
     }
 
+    // Find which profile owns a DjiDevice instance via === identity, matching Moblin
+    private fun getSettingsForDevice(djiDevice: DjiDevice): SettingsDjiDevice? {
+        val profileId = deviceWrappers.entries.firstOrNull { it.value === djiDevice }?.key
+            ?: return null
+        return DjiRepository.devices.value.firstOrNull { it.id == profileId }
+    }
+
     override fun djiDeviceStreamingState(device: DjiDevice, state: DjiDeviceState) {
-        // find device by instance and update repository entries if address known
-        // best-effort: update all devices where DjiDevice instance matches
-        val address = devices.entries.firstOrNull { it.value === device }?.key
-        if (address == null) return
         scope.launch(Dispatchers.Main) {
-            val currentList = DjiRepository.devices.value
-            val existing = currentList.firstOrNull { it.bluetoothPeripheralAddress == address } ?: return@launch
+            val existing = getSettingsForDevice(device) ?: return@launch
             val newState = when (state) {
                 DjiDeviceState.IDLE -> SettingsDjiDeviceState.IDLE
                 DjiDeviceState.DISCOVERING -> SettingsDjiDeviceState.DISCOVERING
@@ -104,7 +106,6 @@ object DjiModel : DjiDeviceDelegate {
                 DjiDeviceState.STREAMING -> SettingsDjiDeviceState.STREAMING
             }
             
-            // Build updated copy — never mutate the object already in the list
             var updated = existing.copy(state = newState)
 
             when (state) {
