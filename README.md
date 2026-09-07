@@ -31,11 +31,11 @@ I only have Action 4 to test. I can confirm it works.
 
 List of all cameras that can work in theory:
 
-- ❓ DJI Osmo Action 2
+- ❌ DJI Osmo Action 2. Looks like remote control functionality doesn't work in Moblin too. Other remotes copy from Moblin, so I guess no one was able to get it working.
 - ❓ DJI Osmo Action 3
 - ✅ DJI Osmo Action 4
 - ✅ DJI Osmo Action 5 Pro
-- ❓ DJI Osmo Action 6
+- ✅ DJI Osmo Action 6. It seems to work for people even though I haven't ported the latest Action 6 tweaks from Moblin.
 - ❓ DJI Osmo 360
 - ✅ DJI Osmo Pocket 3
 - ✅ DJI Osmo Pocket 4 (updated the code to add support, haven't yet received confirmation that it actually works)
