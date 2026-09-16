@@ -4,6 +4,8 @@ Android app that can remote control DJI cameras like Action 4 via Bluetooth and 
 
 This functionality was originally developed in iOS app [Moblin](https://github.com/eerimoq/Moblin), which I've ported to Android.
 
+[Watch app introduction/demo video.](https://www.youtube.com/watch?v=Li5RL3JKjug)
+
 RTMP stream parameters that can be configured:
 - Wi-Fi network name and password
 - RTMP URL to stream to
